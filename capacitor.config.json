@@ -1,0 +1,8 @@
+{
+  "appId": "com.bilel.golf7trajets",
+  "appName": "Golf 7 Trajets",
+  "webDir": "www",
+  "android": {
+    "useLegacyBridge": true
+  }
+}

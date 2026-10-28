@@ -1,0 +1,485 @@
+<title>Golf 7 Trajets</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-column phone app, sticky header, bottom tab bar; instrument-cluster numerals for live data */
+:root{
+  --bg:#eef1f5; --surface:#ffffff; --surface-2:#e3e8ef; --line:#cfd6e0;
+  --fg:#16202c; --muted:#5b6877; --accent:#1f56c9; --accent-soft:#dbe5fa;
+  --good:#1d8a5b; --warn:#b26b00; --bad:#c23b3b;
+  --route-a:#1f56c9; --route-b:#d9822b;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141b; --surface:#18202a; --surface-2:#212b37; --line:#2e3a48;
+  --fg:#e7ecf2; --muted:#93a1b2; --accent:#6f9bff; --accent-soft:#1d2c4a;
+  --good:#46c08a; --warn:#e2a242; --bad:#f07171; --route-a:#6f9bff; --route-b:#f0a35a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --surface:#18202a; --surface-2:#212b37; --line:#2e3a48;
+  --fg:#e7ecf2; --muted:#93a1b2; --accent:#6f9bff; --accent-soft:#1d2c4a;
+  --good:#46c08a; --warn:#e2a242; --bad:#f07171; --route-a:#6f9bff; --route-b:#f0a35a; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--body);font-size:15px;line-height:1.45;padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.wrap{max-width:640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:12px}
+.brand{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.02em}
+.brand small{display:block;font-family:var(--body);font-weight:500;font-size:12px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.plate{font-family:var(--mono);font-size:12px;border:1.5px solid var(--fg);border-radius:4px;padding:2px 8px}
+main .wrap{display:flex;flex-direction:column;gap:16px;padding-block:16px}
+h2{font-family:var(--display);font-weight:600;font-size:22px;margin:0;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:17px;margin:0}
+.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.num{font-family:var(--display);font-variant-numeric:tabular-nums}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.muted{color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.between{justify-content:space-between}
+button,.btn{font:600 15px var(--body);border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;padding:10px 14px;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.big{width:100%;padding:16px;font-size:18px;font-family:var(--display);letter-spacing:.04em;text-transform:uppercase}
+input,select,textarea{font:15px var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;width:100%}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+/* live cluster */
+.cluster{display:grid;grid-template-columns:1fr;gap:4px;text-align:center;padding-block:8px}
+.speed{font-family:var(--display);font-weight:700;font-size:88px;line-height:1;font-variant-numeric:tabular-nums}
+.speed span{font-size:20px;font-weight:600;color:var(--muted);margin-left:4px}
+.stat .v{font-family:var(--display);font-weight:600;font-size:24px;font-variant-numeric:tabular-nums}
+.stat .v small{font-size:13px;color:var(--muted);font-weight:500;margin-left:2px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--surface-2);color:var(--muted)}
+.pill.on{background:var(--accent-soft);color:var(--accent)}
+.pill.rec{background:var(--bad);color:var(--surface)}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.rec .dot{animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+@media (prefers-reduced-motion:reduce){.pill.rec .dot{animation:none}}
+.note{font-size:13px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:10px 12px}
+/* trip list */
+.day{display:flex;flex-direction:column;gap:8px}
+.trip{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:center;text-align:left;width:100%;padding:12px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-weight:400}
+.trip canvas{width:76px;height:56px;background:var(--surface-2);border-radius:8px}
+.trip .t1{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.trip .t2{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.tag{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:4px;background:var(--surface-2);color:var(--muted)}
+.tag.pro{background:var(--accent-soft);color:var(--accent)}
+.tag.ex{border:1px dashed var(--muted);background:transparent}
+canvas.map{width:100%;height:240px;background:var(--surface-2);border-radius:10px;display:block}
+canvas.chart{width:100%;height:140px;display:block}
+.kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.kv div{display:flex;flex-direction:column;gap:2px}
+.kv b{font-family:var(--display);font-weight:600;font-size:20px;font-variant-numeric:tabular-nums}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--muted);align-items:center}
+.legend i{display:inline-block;width:24px;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--route-a),var(--route-b))}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-block:6px}
+nav.tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:600;color:var(--muted);padding:6px 4px}
+nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
+nav.tabs button[aria-current="page"]{color:var(--accent)}
+.empty{text-align:center;padding:24px 8px;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:20}
+textarea{min-height:70px;resize:vertical}
+pre.out{font-family:var(--mono);font-size:12px;max-height:160px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;margin:0;white-space:pre-wrap;word-break:break-all}
+@media (max-width:380px){.speed{font-size:72px}.grid3{gap:8px}}
+</style>
+
+<header class="top"><div class="wrap">
+  <div class="brand">Mes trajets<small>Golf 7 · IQ.DRIVE</small></div>
+  <span class="plate" id="platePill">GOLF 7</span>
+</div></header>
+
+<main>
+  <!-- LIVE -->
+  <section id="v-live"><div class="wrap">
+    <div class="panel">
+      <div class="row between">
+        <span class="pill" id="gpsPill"><span class="dot"></span>GPS inactif</span>
+        <span class="pill" id="obdPill"><span class="dot"></span>OBD non connecté</span>
+      </div>
+      <div class="cluster">
+        <div class="speed"><b id="lvSpeed">0</b><span>km/h</span></div>
+        <div class="lbl">Vitesse GPS</div>
+      </div>
+      <div class="grid3">
+        <div class="stat"><div class="lbl">Distance</div><div class="v"><span id="lvDist">0,0</span><small>km</small></div></div>
+        <div class="stat"><div class="lbl">Durée</div><div class="v"><span id="lvDur">0:00</span></div></div>
+        <div class="stat"><div class="lbl">Moyenne</div><div class="v"><span id="lvAvg">0</span><small>km/h</small></div></div>
+      </div>
+      <div class="grid3" id="obdLive" hidden>
+        <div class="stat"><div class="lbl">Régime</div><div class="v"><span id="lvRpm">–</span><small>tr/min</small></div></div>
+        <div class="stat"><div class="lbl">Liquide refr.</div><div class="v"><span id="lvTemp">–</span><small>°C</small></div></div>
+        <div class="stat"><div class="lbl">Conso inst.</div><div class="v"><span id="lvCons">–</span><small>L/100</small></div></div>
+      </div>
+      <button class="big primary" id="btnTrip">Démarrer le trajet</button>
+      <div class="note" id="liveNote" hidden></div>
+    </div>
+
+    <div class="panel">
+      <div class="row between"><h3>Boîtier OBD-II</h3><span class="tag">optionnel</span></div>
+      <p class="muted" style="margin:0">Branche un dongle ELM327 Bluetooth LE sous le volant pour ajouter régime moteur, température et consommation réelle à chaque trajet.</p>
+      <button id="btnObd">Connecter le boîtier OBD</button>
+      <div class="note" id="obdNote" hidden></div>
+    </div>
+  </div></section>
+
+  <!-- HISTORY -->
+  <section id="v-history" hidden><div class="wrap">
+    <div class="row between"><h2>Historique</h2>
+      <select id="filterCat" style="width:auto" aria-label="Filtrer par catégorie">
+        <option value="all">Tous</option><option value="perso">Perso</option><option value="pro">Pro</option>
+      </select>
+    </div>
+    <div class="note" id="exampleNote" hidden>Ces trajets sont des exemples pour montrer l'app. Ils disparaissent dès que tu enregistres ton premier trajet. <button id="btnClearEx" style="margin-top:8px">Retirer les exemples</button></div>
+    <div id="tripList"></div>
+  </div></section>
+
+  <!-- DETAIL -->
+  <section id="v-detail" hidden><div class="wrap" id="detail"></div></section>
+
+  <!-- STATS -->
+  <section id="v-stats" hidden><div class="wrap">
+    <h2>Statistiques</h2>
+    <div class="panel">
+      <div class="row between"><h3 id="stMonthLbl">Ce mois-ci</h3><span class="muted" id="stCount"></span></div>
+      <div class="kv">
+        <div><span class="lbl">Distance</span><b id="stKm">0 km</b></div>
+        <div><span class="lbl">Temps de conduite</span><b id="stTime">0 h</b></div>
+        <div><span class="lbl">Carburant estimé</span><b id="stFuel">0 L</b></div>
+        <div><span class="lbl">Coût estimé</span><b id="stCost">0</b></div>
+        <div><span class="lbl">CO₂ émis</span><b id="stCo2">0 kg</b></div>
+        <div><span class="lbl">Part pro</span><b id="stPro">0 %</b></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Kilomètres par mois</h3>
+      <canvas class="chart" id="chMonths" style="height:180px"></canvas>
+    </div>
+  </div></section>
+
+  <!-- SETTINGS -->
+  <section id="v-settings" hidden><div class="wrap">
+    <h2>Réglages</h2>
+    <div class="panel">
+      <h3>Ma voiture</h3>
+      <div class="grid2">
+        <label class="f">Nom affiché<input id="sName" maxlength="20"></label>
+        <label class="f">Motorisation<select id="sFuel">
+          <option value="essence">Essence (TSI)</option><option value="diesel">Diesel (TDI)</option></select></label>
+        <label class="f">Conso moyenne (L/100)<input id="sCons" type="number" step="0.1" min="2" max="20"></label>
+        <label class="f">Prix carburant / L<input id="sPrice" type="number" step="0.001" min="0"></label>
+        <label class="f">Devise<input id="sCur" maxlength="4"></label>
+        <label class="f">Kilométrage actuel<input id="sOdo" type="number" min="0" step="1"></label>
+      </div>
+      <p class="muted" style="margin:0;font-size:13px">La conso moyenne sert d'estimation quand l'OBD n'est pas branché. Pour un trajet précis, saisis la conso affichée par l'ordinateur de bord (« Depuis départ ») dans le détail du trajet.</p>
+    </div>
+    <div class="panel">
+      <h3>Mes données</h3>
+      <p class="muted" style="margin:0">Les trajets restent sur ce téléphone. Exporte-les régulièrement pour les sauvegarder.</p>
+      <div class="row">
+        <button id="btnExportJson">Exporter (JSON)</button>
+        <button id="btnExportCsv">Exporter (CSV)</button>
+        <label class="btn" for="fileImport">Importer…</label>
+        <input type="file" id="fileImport" accept=".json,application/json" hidden>
+      </div>
+      <pre class="out" id="exportOut" hidden></pre>
+      <div id="wipeBox" class="row"><button class="danger" id="btnWipe">Supprimer tous les trajets</button></div>
+    </div>
+  </div></section>
+</main>
+
+<nav class="tabs" aria-label="Navigation"><div class="wrap">
+  <button data-v="live" aria-current="page"><svg viewBox="0 0 24 24"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>Trajet</button>
+  <button data-v="history"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h9"/></svg>Historique</button>
+  <button data-v="stats"><svg viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>Stats</button>
+  <button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Réglages</button>
+</div></nav>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const KEY="golf7.trips.v1", SKEY="golf7.settings.v1";
+const CO2={essence:2.31,diesel:2.68};           // kg de CO2 par litre brûlé
+const FUEL_DENSITY={essence:745,diesel:832};      // g/L
+const AFR={essence:14.7,diesel:14.5};             // rapport air/carburant stœchiométrique
+
+/* ---------- stockage ---------- */
+function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+function save(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
+let settings=Object.assign({name:"Golf 7",fuel:"essence",cons:5.8,price:1.85,cur:"€",odo:""},load(SKEY,{}));
+let trips=load(KEY,null);
+if(!trips||!trips.length) trips=makeExamples();
+
+/* ---------- utilitaires ---------- */
+const fmt=(n,d=1)=>Number(n).toLocaleString("fr-FR",{minimumFractionDigits:d,maximumFractionDigits:d});
+const pad=n=>String(n).padStart(2,"0");
+function dur(ms){const s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h} h ${pad(m)}`:`${m}:${pad(s%60)}`}
+function hav(a,b){const R=6371000,r=Math.PI/180,dLa=(b[0]-a[0])*r,dLo=(b[1]-a[1])*r;
+  const x=Math.sin(dLa/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+function toast(t){const el=document.createElement("div");el.className="toast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2200)}
+function fuelOf(t){ if(t.consManual) return t.distKm*t.consManual/100; if(t.obdFuelL) return t.obdFuelL; return t.distKm*settings.cons/100 }
+function consOf(t){ if(t.consManual) return {v:t.consManual,src:"ordinateur de bord"}; if(t.obdFuelL&&t.distKm>0.5) return {v:t.obdFuelL/t.distKm*100,src:"OBD"}; return {v:settings.cons,src:"estimation"} }
+function costOf(t){return fuelOf(t)*settings.price}
+
+/* ---------- exemples (marqués comme tels) ---------- */
+function makeExamples(){
+  const now=new Date(), out=[];
+  const specs=[[0,8,12,18.4,"pro","Domicile → Bureau"],[1,18,5,19.1,"pro","Bureau → Domicile"],[2,10,30,64.8,"perso","Sortie du week-end"],[5,7,55,7.2,"perso","Courses"],[34,9,0,212.5,"perso","Vacances"]];
+  let seed=7; const rnd=()=>(seed=(seed*9301+49297)%233280)/233280;
+  for(const [dAgo,h,m,km,cat,title] of specs){
+    const start=new Date(now.getFullYear(),now.getMonth(),now.getDate()-dAgo,h,m).getTime();
+    const n=60, pts=[]; let la=36.80+rnd()*0.05, lo=10.17+rnd()*0.05, ang=rnd()*6;
+    const step=km/n/111; let t=start;
+    const avg=km>100?92:km>40?68:34;
+    for(let i=0;i<=n;i++){ang+=(rnd()-.5)*0.7;la+=Math.cos(ang)*step;lo+=Math.sin(ang)*step*1.25;
+      const sp=Math.max(0,avg*(0.55+rnd()*0.9)*(i===0||i===n?0.2:1));t+=km/n/avg*3600000;pts.push([+la.toFixed(5),+lo.toFixed(5),t,Math.round(sp)])}
+    const durMs=pts[n][2]-start;
+    out.push({id:"ex"+start,example:true,title,cat,start,end:pts[n][2],distKm:km,durMs,maxKmh:Math.max(...pts.map(p=>p[3])),pts,
+      obd:km>50?{rpmAvg:2150,tempMax:92,samples:120}:null,obdFuelL:km>50?km*0.061:0,consManual:0,note:""});
+  }
+  return out.sort((a,b)=>b.start-a.start);
+}
+function persist(){return save(KEY,trips.filter(t=>!t.example))}
+
+/* ---------- navigation ---------- */
+let view="live", detailId=null;
+function show(v){view=v;for(const s of["live","history","detail","stats","settings"])$("v-"+s).hidden=s!==v;
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.toggleAttribute("aria-current",b.dataset.v===v||(v==="detail"&&b.dataset.v==="history")));
+  document.querySelectorAll("nav.tabs button[aria-current]").forEach(b=>b.setAttribute("aria-current","page"));
+  if(v==="history")renderList(); if(v==="stats")renderStats(); if(v==="settings")renderSettings(); window.scrollTo(0,0)}
+document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>show(b.dataset.v));
+
+/* ---------- dessin du parcours ---------- */
+function setupCanvas(c){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(1,r.width*d);c.height=Math.max(1,r.height*d);const x=c.getContext("2d");x.scale(d,d);return [x,r.width,r.height]}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function mix(a,b,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const A=p(a),B=p(b);return `rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(",")})`}
+function drawRoute(c,pts,thick){
+  const [x,w,h]=setupCanvas(c); if(!pts||pts.length<2){x.fillStyle=css("--muted");x.font="12px sans-serif";x.textAlign="center";x.fillText("pas de tracé",w/2,h/2);return}
+  let mnA=90,mxA=-90,mnO=180,mxO=-180;for(const p of pts){mnA=Math.min(mnA,p[0]);mxA=Math.max(mxA,p[0]);mnO=Math.min(mnO,p[1]);mxO=Math.max(mxO,p[1])}
+  const k=Math.cos((mnA+mxA)/2*Math.PI/180),pd=thick?18:7;const sx=(mxO-mnO)*k||1e-5,sy=(mxA-mnA)||1e-5;const s=Math.min((w-2*pd)/sx,(h-2*pd)/sy);
+  const ox=(w-sx*s)/2,oy=(h-sy*s)/2;const P=p=>[ox+(p[1]-mnO)*k*s,h-oy-(p[0]-mnA)*s];
+  const maxS=Math.max(30,...pts.map(p=>p[3]||0)),ca=css("--route-a"),cb=css("--route-b");
+  x.lineCap="round";x.lineJoin="round";x.lineWidth=thick?4:2;
+  for(let i=1;i<pts.length;i++){const a=P(pts[i-1]),b=P(pts[i]);x.strokeStyle=thick?mix(ca,cb,(pts[i][3]||0)/maxS):ca;x.beginPath();x.moveTo(...a);x.lineTo(...b);x.stroke()}
+  const dot=(p,col)=>{const q=P(p);x.fillStyle=col;x.beginPath();x.arc(q[0],q[1],thick?6:3,0,7);x.fill();x.strokeStyle=css("--surface");x.lineWidth=2;x.stroke()};
+  dot(pts[0],css("--good"));dot(pts[pts.length-1],css("--bad"));
+}
+function drawSpeed(c,pts){
+  const [x,w,h]=setupCanvas(c);if(!pts||pts.length<2)return;const t0=pts[0][2],t1=pts[pts.length-1][2]||t0+1;
+  const maxS=Math.ceil(Math.max(50,...pts.map(p=>p[3]||0))/50)*50;const L=34,B=20,T=8;
+  x.font="11px "+css("--body");x.fillStyle=css("--muted");x.strokeStyle=css("--line");x.lineWidth=1;
+  for(let v=0;v<=maxS;v+=50){const y=T+(h-T-B)*(1-v/maxS);x.beginPath();x.moveTo(L,y);x.lineTo(w,y);x.stroke();x.textAlign="right";x.fillText(v,L-6,y+4)}
+  x.textAlign="left";x.fillText("0 min",L,h-4);x.textAlign="right";x.fillText(Math.round((t1-t0)/60000)+" min",w,h-4);
+  const X=t=>L+(w-L)*(t-t0)/(t1-t0),Y=v=>T+(h-T-B)*(1-v/maxS);
+  x.beginPath();x.moveTo(X(t0),Y(0));for(const p of pts)x.lineTo(X(p[2]),Y(p[3]||0));x.lineTo(X(t1),Y(0));x.closePath();
+  x.globalAlpha=.18;x.fillStyle=css("--accent");x.fill();x.globalAlpha=1;
+  x.beginPath();pts.forEach((p,i)=>i?x.lineTo(X(p[2]),Y(p[3]||0)):x.moveTo(X(p[2]),Y(p[3]||0)));x.strokeStyle=css("--accent");x.lineWidth=2;x.stroke();
+}
+
+/* ---------- historique ---------- */
+function dayLabel(ts){const d=new Date(ts),t=new Date();const y=new Date(t);y.setDate(t.getDate()-1);
+  if(d.toDateString()===t.toDateString())return"Aujourd'hui";if(d.toDateString()===y.toDateString())return"Hier";
+  return d.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}
+function hm(ts){const d=new Date(ts);return pad(d.getHours())+"h"+pad(d.getMinutes())}
+function renderList(){
+  const f=$("filterCat").value,list=$("tripList");list.textContent="";
+  $("exampleNote").hidden=!trips.some(t=>t.example);
+  const items=trips.filter(t=>f==="all"||t.cat===f);
+  if(!items.length){list.innerHTML='<div class="empty">Aucun trajet pour l\'instant. Lance ton premier trajet depuis l\'onglet Trajet.</div>';return}
+  let cur=null,box=null;
+  for(const t of items){const lab=dayLabel(t.start);
+    if(lab!==cur){cur=lab;box=document.createElement("div");box.className="day";const h=document.createElement("div");h.className="lbl";h.textContent=lab;box.appendChild(h);list.appendChild(box);box.style.marginBottom="16px"}
+    const b=document.createElement("button");b.className="trip";
+    const c=document.createElement("canvas");b.appendChild(c);
+    const r=document.createElement("div");r.style.minWidth="0";
+    const t1=document.createElement("div");t1.className="t1";const nm=document.createElement("span");nm.textContent=t.title||(hm(t.start)+" → "+hm(t.end));
+    const km=document.createElement("span");km.className="num";km.textContent=fmt(t.distKm)+" km";t1.append(nm,km);
+    const t2=document.createElement("div");t2.className="t2";
+    t2.innerHTML=`<span>${hm(t.start)} – ${hm(t.end)}</span><span>${dur(t.durMs)}</span><span>${fmt(fuelOf(t))} L · ${fmt(costOf(t),2)} ${esc(settings.cur)}</span>`;
+    const tg=document.createElement("span");tg.className="tag"+(t.cat==="pro"?" pro":"");tg.textContent=t.cat==="pro"?"Pro":"Perso";t2.appendChild(tg);
+    if(t.example){const e=document.createElement("span");e.className="tag ex";e.textContent="Exemple";t2.appendChild(e)}
+    r.append(t1,t2);b.appendChild(r);b.onclick=()=>openDetail(t.id);box.appendChild(b);
+    requestAnimationFrame(()=>drawRoute(c,t.pts,false));
+  }
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+$("filterCat").onchange=renderList;
+$("btnClearEx").onclick=()=>{trips=trips.filter(t=>!t.example);renderList();toast("Exemples retirés")};
+
+/* ---------- détail ---------- */
+function openDetail(id){detailId=id;const t=trips.find(x=>x.id===id);if(!t)return show("history");show("detail");
+  const c=consOf(t),d=$("detail"),avg=t.durMs?t.distKm/(t.durMs/3600000):0,co2=fuelOf(t)*CO2[settings.fuel];
+  const first=t.pts&&t.pts[0],last=t.pts&&t.pts[t.pts.length-1];
+  const osm=first?`https://www.openstreetmap.org/directions?route=${first[0]},${first[1]};${last[0]},${last[1]}`:"";
+  d.innerHTML=`
+  <div class="row between"><button id="dBack">← Historique</button>${t.example?'<span class="tag ex">Exemple</span>':""}</div>
+  <div><div class="lbl">${esc(dayLabel(t.start))} · ${hm(t.start)} – ${hm(t.end)}</div><h2>${esc(t.title||"Trajet")}</h2></div>
+  <div class="panel"><canvas class="map" id="dMap"></canvas>
+    <div class="row between"><div class="legend"><i></i>lent → rapide</div>${osm?`<a href="${osm}" target="_blank" rel="noopener" class="muted" style="font-size:13px">Ouvrir dans OpenStreetMap ↗</a>`:""}</div></div>
+  <div class="panel"><div class="kv">
+    <div><span class="lbl">Distance</span><b>${fmt(t.distKm)} km</b></div>
+    <div><span class="lbl">Durée</span><b>${dur(t.durMs)}</b></div>
+    <div><span class="lbl">Vitesse moyenne</span><b>${fmt(avg,0)} km/h</b></div>
+    <div><span class="lbl">Vitesse max</span><b>${fmt(t.maxKmh||0,0)} km/h</b></div>
+    <div><span class="lbl">Consommation</span><b>${fmt(c.v)} L/100</b><span class="muted" style="font-size:12px">${c.src}</span></div>
+    <div><span class="lbl">Carburant</span><b>${fmt(fuelOf(t))} L</b></div>
+    <div><span class="lbl">Coût</span><b>${fmt(costOf(t),2)} ${esc(settings.cur)}</b></div>
+    <div><span class="lbl">CO₂</span><b>${fmt(co2)} kg</b></div>
+    ${t.obd?`<div><span class="lbl">Régime moyen</span><b>${fmt(t.obd.rpmAvg,0)} tr/min</b></div><div><span class="lbl">Temp. moteur max</span><b>${fmt(t.obd.tempMax,0)} °C</b></div>`:""}
+  </div></div>
+  <div class="panel"><h3>Profil de vitesse (km/h)</h3><canvas class="chart" id="dSpeed"></canvas></div>
+  <div class="panel"><h3>Infos du trajet</h3>
+    <label class="f">Nom<input id="dTitle" maxlength="40" value="${esc(t.title||"")}" placeholder="ex. Domicile → Bureau"></label>
+    <div class="grid2">
+      <label class="f">Catégorie<select id="dCat"><option value="perso">Perso</option><option value="pro">Pro</option></select></label>
+      <label class="f">Conso ordinateur de bord<input id="dCons" type="number" step="0.1" min="0" value="${t.consManual||""}" placeholder="L/100"></label>
+    </div>
+    <label class="f">Note<textarea id="dNote" placeholder="Péage, parking, plein…">${esc(t.note||"")}</textarea></label>
+    <div class="row"><button class="primary" id="dSave">Enregistrer</button><span id="dDelBox"><button class="danger" id="dDel">Supprimer</button></span></div>
+  </div>`;
+  $("dCat").value=t.cat||"perso";
+  requestAnimationFrame(()=>{drawRoute($("dMap"),t.pts,true);drawSpeed($("dSpeed"),t.pts)});
+  $("dBack").onclick=()=>show("history");
+  $("dSave").onclick=()=>{t.title=$("dTitle").value.trim();t.cat=$("dCat").value;t.consManual=parseFloat($("dCons").value)||0;t.note=$("dNote").value;persist();toast("Trajet enregistré");openDetail(t.id)};
+  $("dDel").onclick=()=>{const box=$("dDelBox");box.innerHTML='<span class="muted">Supprimer ce trajet ?</span> <button class="danger" id="dDelY">Oui, supprimer</button> <button id="dDelN">Annuler</button>';
+    $("dDelY").onclick=()=>{trips=trips.filter(x=>x.id!==t.id);persist();toast("Trajet supprimé");show("history")};$("dDelN").onclick=()=>openDetail(t.id)};
+}
+
+/* ---------- stats ---------- */
+function renderStats(){
+  const now=new Date(),m0=new Date(now.getFullYear(),now.getMonth(),1).getTime();
+  const mt=trips.filter(t=>t.start>=m0),km=mt.reduce((s,t)=>s+t.distKm,0),fuel=mt.reduce((s,t)=>s+fuelOf(t),0);
+  $("stMonthLbl").textContent=now.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());
+  $("stCount").textContent=mt.length+" trajet"+(mt.length>1?"s":"")+(trips.some(t=>t.example)?" (exemples)":"");
+  $("stKm").textContent=fmt(km)+" km";$("stTime").textContent=dur(mt.reduce((s,t)=>s+t.durMs,0));
+  $("stFuel").textContent=fmt(fuel)+" L";$("stCost").textContent=fmt(fuel*settings.price,2)+" "+settings.cur;
+  $("stCo2").textContent=fmt(fuel*CO2[settings.fuel])+" kg";
+  const pro=mt.filter(t=>t.cat==="pro").reduce((s,t)=>s+t.distKm,0);$("stPro").textContent=(km?Math.round(pro/km*100):0)+" %";
+  // 6 derniers mois
+  const months=[];for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const e=new Date(d.getFullYear(),d.getMonth()+1,1);
+    months.push({l:d.toLocaleDateString("fr-FR",{month:"short"}).replace(".",""),v:trips.filter(t=>t.start>=d&&t.start<e).reduce((s,t)=>s+t.distKm,0)})}
+  requestAnimationFrame(()=>{const c=$("chMonths"),[x,w,h]=setupCanvas(c);const B=22,T=18,max=Math.max(10,...months.map(m=>m.v));
+    const bw=(w/months.length)*.56;x.font="12px "+css("--body");x.textAlign="center";
+    months.forEach((m,i)=>{const cx=(i+.5)*w/months.length,bh=(h-B-T)*m.v/max;x.fillStyle=i===5?css("--accent"):css("--surface-2");
+      x.fillRect(cx-bw/2,h-B-bh,bw,Math.max(bh,1));x.fillStyle=css("--muted");x.fillText(m.l,cx,h-6);
+      if(m.v){x.fillStyle=css("--fg");x.fillText(Math.round(m.v),cx,h-B-bh-5)}});
+    x.strokeStyle=css("--line");x.beginPath();x.moveTo(0,h-B+.5);x.lineTo(w,h-B+.5);x.stroke()});
+}
+
+/* ---------- réglages ---------- */
+function renderSettings(){$("sName").value=settings.name;$("sFuel").value=settings.fuel;$("sCons").value=settings.cons;$("sPrice").value=settings.price;$("sCur").value=settings.cur;$("sOdo").value=settings.odo}
+for(const [id,k,num] of [["sName","name"],["sFuel","fuel"],["sCons","cons",1],["sPrice","price",1],["sCur","cur"],["sOdo","odo"]])
+  $(id).onchange=()=>{let v=$(id).value;if(num){v=parseFloat(v);if(!(v>0))return}settings[k]=v;save(SKEY,settings);$("platePill").textContent=settings.name||"GOLF 7";toast("Réglage enregistré")};
+$("platePill").textContent=settings.name||"GOLF 7";
+function offer(name,text,type){
+  try{const u=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}catch(e){}
+  const o=$("exportOut");o.hidden=false;o.textContent=text;
+  if(navigator.clipboard)navigator.clipboard.writeText(text).then(()=>toast("Copié dans le presse-papiers"),()=>{});
+}
+$("btnExportJson").onclick=()=>offer("golf7-trajets.json",JSON.stringify({settings,trips:trips.filter(t=>!t.example)},null,1),"application/json");
+$("btnExportCsv").onclick=()=>{const rows=[["date","debut","fin","nom","categorie","distance_km","duree_min","vitesse_moy","vitesse_max","conso_L100","carburant_L","cout","co2_kg","note"]];
+  for(const t of trips.filter(t=>!t.example)){const d=new Date(t.start);rows.push([d.toLocaleDateString("fr-FR"),hm(t.start),hm(t.end),t.title||"",t.cat,fmt(t.distKm,2),Math.round(t.durMs/60000),fmt(t.durMs?t.distKm/(t.durMs/3600000):0,0),t.maxKmh||0,fmt(consOf(t).v),fmt(fuelOf(t),2),fmt(costOf(t),2),fmt(fuelOf(t)*CO2[settings.fuel],2),(t.note||"").replace(/\n/g," ")])}
+  offer("golf7-trajets.csv",rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n"),"text/csv")};
+$("fileImport").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);
+  const add=(j.trips||[]).filter(t=>t&&t.id&&!trips.some(x=>x.id===t.id));trips=trips.filter(t=>!t.example).concat(add).sort((a,b)=>b.start-a.start);
+  if(j.settings)Object.assign(settings,j.settings),save(SKEY,settings);persist();toast(add.length+" trajet(s) importé(s)")}catch(err){toast("Fichier illisible : choisis un export JSON de l'app")}};r.readAsText(f)};
+function resetWipe(){$("wipeBox").innerHTML='<button class="danger" id="btnWipe">Supprimer tous les trajets</button>';bindWipe()}
+function bindWipe(){$("btnWipe").onclick=()=>{$("wipeBox").innerHTML='<span class="muted">Tout supprimer définitivement ?</span><button class="danger" id="wY">Oui, tout supprimer</button><button id="wN">Annuler</button>';
+  $("wY").onclick=()=>{trips=[];persist();resetWipe();toast("Trajets supprimés")};$("wN").onclick=resetWipe}}
+bindWipe();
+
+/* ---------- enregistrement GPS ---------- */
+let rec=null,watchId=null,timer=null,wakeLock=null;
+function setPill(el,cls,txt){el.className="pill"+(cls?" "+cls:"");el.innerHTML='<span class="dot"></span>';el.append(txt)}
+function liveNote(t){$("liveNote").hidden=!t;$("liveNote").textContent=t||""}
+async function startTrip(){
+  if(!("geolocation" in navigator)){liveNote("Ce navigateur ne donne pas accès au GPS.");return}
+  rec={id:"t"+Date.now(),start:Date.now(),pts:[],distKm:0,maxKmh:0,cat:"perso",title:"",note:"",consManual:0,obdSamples:[],obdFuelL:0,last:null};
+  $("btnTrip").textContent="Terminer le trajet";$("btnTrip").classList.remove("primary");setPill($("gpsPill"),"rec","Enregistrement");
+  liveNote("Recherche du signal GPS… Garde l'écran allumé pendant le trajet.");
+  try{wakeLock=await navigator.wakeLock?.request("screen")}catch(e){}
+  watchId=navigator.geolocation.watchPosition(onPos,err=>{
+    liveNote(err.code===1?"L'accès à la position est refusé. Autorise la localisation pour ce site dans les réglages du navigateur, puis relance le trajet.":"Signal GPS indisponible pour l'instant ("+err.message+").");
+    if(err.code===1)stopTrip(true)},{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+  timer=setInterval(updateLive,1000);
+}
+function onPos(p){if(!rec)return;const c=p.coords;if(c.accuracy>60)return;liveNote("");
+  const pt=[+c.latitude.toFixed(6),+c.longitude.toFixed(6),p.timestamp,0];
+  let kmh=c.speed!=null&&c.speed>=0?c.speed*3.6:null;
+  if(rec.last){const d=hav(rec.last,pt),dt=(pt[2]-rec.last[2])/1000;if(kmh==null&&dt>0)kmh=d/dt*3.6;
+    if(d<Math.max(4,c.accuracy*.5)&&(kmh||0)<5){rec.lastKmh=kmh||0;return} // à l'arrêt : on ignore la dérive GPS
+    if(dt>0&&d/dt*3.6>250)return; // saut aberrant
+    rec.distKm+=d/1000}
+  pt[3]=Math.round(kmh||0);rec.maxKmh=Math.max(rec.maxKmh,pt[3]);rec.lastKmh=pt[3];rec.pts.push(pt);rec.last=pt;updateLive()}
+function updateLive(){if(!rec)return;const ms=Date.now()-rec.start;$("lvSpeed").textContent=Math.round(rec.lastKmh||0);
+  $("lvDist").textContent=fmt(rec.distKm);$("lvDur").textContent=dur(ms);$("lvAvg").textContent=Math.round(ms>0?rec.distKm/(ms/3600000):0)}
+function stopTrip(discard){
+  if(watchId!=null)navigator.geolocation.clearWatch(watchId);watchId=null;clearInterval(timer);try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null;
+  $("btnTrip").textContent="Démarrer le trajet";$("btnTrip").classList.add("primary");setPill($("gpsPill"),"","GPS inactif");
+  const r=rec;rec=null;if(!r||discard)return;
+  r.end=Date.now();r.durMs=r.end-r.start;
+  if(r.obdSamples.length){const s=r.obdSamples;r.obd={rpmAvg:s.reduce((a,x)=>a+(x.rpm||0),0)/s.length,tempMax:Math.max(...s.map(x=>x.temp||0)),samples:s.length}}
+  delete r.obdSamples;delete r.last;delete r.lastKmh;
+  if(r.distKm<0.1){liveNote("Trajet trop court (moins de 100 m) : il n'a pas été enregistré.");return}
+  if(r.pts.length>800){const k=Math.ceil(r.pts.length/800);r.pts=r.pts.filter((p,i)=>i%k===0||i===r.pts.length-1)}
+  trips=trips.filter(t=>!t.example);trips.unshift(r);
+  if(settings.odo)settings.odo=String(Math.round(parseFloat(settings.odo)+r.distKm)),save(SKEY,settings);
+  if(!persist())toast("Attention : impossible d'enregistrer sur ce navigateur");
+  openDetail(r.id);toast("Trajet enregistré");
+}
+$("btnTrip").onclick=()=>rec?stopTrip(false):startTrip();
+
+/* ---------- OBD-II via Bluetooth LE (ELM327) ---------- */
+const OBD_SERVICES=[0xfff0,0xffe0,"e7810a71-73ae-499d-8c15-faa9aef0c3f2"];
+let obd=null;
+function obdNote(t){$("obdNote").hidden=!t;$("obdNote").textContent=t||""}
+if(!navigator.bluetooth){$("btnObd").disabled=true;obdNote("Le Bluetooth web n'est pas disponible ici. Il fonctionne dans Chrome sur Android (ou un PC), pas sur iPhone. Le suivi GPS marche sans boîtier.")}
+$("btnObd").onclick=async()=>{
+  if(obd){obd.dev.gatt.disconnect();return}
+  try{
+    const dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:OBD_SERVICES});
+    setPill($("obdPill"),"","Connexion…");const gatt=await dev.gatt.connect();
+    let svc=null;for(const u of OBD_SERVICES){try{svc=await gatt.getPrimaryService(u);break}catch(e){}}
+    if(!svc)throw new Error("Ce boîtier n'expose pas de service ELM327 connu (seuls les modèles Bluetooth LE sont compatibles).");
+    const chars=await svc.getCharacteristics();
+    const tx=chars.find(c=>c.properties.write||c.properties.writeWithoutResponse),rx=chars.find(c=>c.properties.notify);
+    if(!tx||!rx)throw new Error("Caractéristiques du boîtier introuvables.");
+    let buf="",waiter=null;await rx.startNotifications();
+    rx.addEventListener("characteristicvaluechanged",e=>{buf+=new TextDecoder().decode(e.target.value);if(buf.includes(">")&&waiter){const r=buf;buf="";waiter(r)}});
+    const send=cmd=>new Promise((res,rej)=>{const to=setTimeout(()=>{waiter=null;buf="";res("")},2500);waiter=r=>{clearTimeout(to);waiter=null;res(r)};
+      (tx.properties.write?tx.writeValue(new TextEncoder().encode(cmd+"\r")):tx.writeValueWithoutResponse(new TextEncoder().encode(cmd+"\r"))).catch(rej)});
+    obd={dev,send};dev.addEventListener("gattserverdisconnected",()=>{obd=null;setPill($("obdPill"),"","OBD non connecté");$("obdLive").hidden=true;$("btnObd").textContent="Connecter le boîtier OBD"});
+    for(const c of["ATZ","ATE0","ATL0","ATS0","ATH0","ATSP0"])await send(c);
+    setPill($("obdPill"),"on","OBD connecté");$("btnObd").textContent="Déconnecter le boîtier";$("obdLive").hidden=false;obdNote("");pollObd();
+  }catch(e){if(e.name!=="NotFoundError")obdNote(e.message);setPill($("obdPill"),"","OBD non connecté")}
+};
+function pid(resp,code){const s=resp.replace(/[\s>\r\n]/g,"").toUpperCase();const i=s.indexOf("41"+code);if(i<0)return null;
+  const h=s.slice(i+4);const b=[];for(let k=0;k<h.length&&b.length<4;k+=2){const v=parseInt(h.substr(k,2),16);if(isNaN(v))break;b.push(v)}return b.length?b:null}
+async function pollObd(){
+  let lastT=Date.now();
+  while(obd){try{
+    const sp=pid(await obd.send("010D"),"0D"),rp=pid(await obd.send("010C"),"0C"),tp=pid(await obd.send("0105"),"05"),mf=pid(await obd.send("0110"),"10");
+    const kmh=sp?sp[0]:null,rpm=rp&&rp.length>1?(rp[0]*256+rp[1])/4:null,temp=tp?tp[0]-40:null,maf=mf&&mf.length>1?(mf[0]*256+mf[1])/100:null;
+    const lph=maf!=null?maf*3600/(AFR[settings.fuel]*FUEL_DENSITY[settings.fuel]):null;
+    $("lvRpm").textContent=rpm!=null?Math.round(rpm):"–";$("lvTemp").textContent=temp!=null?temp:"–";
+    $("lvCons").textContent=lph!=null&&kmh>5?fmt(lph/kmh*100):(lph!=null?fmt(lph)+" L/h":"–");
+    const now=Date.now();if(rec){rec.obdSamples.push({rpm,temp,kmh});if(lph!=null)rec.obdFuelL+=lph*(now-lastT)/3600000}lastT=now;
+  }catch(e){break}await new Promise(r=>setTimeout(r,500))}
+}
+
+/* ---------- démarrage ---------- */
+if(!("geolocation" in navigator))liveNote("Ce navigateur ne donne pas accès au GPS.");
+show("live");
+let lastW=innerWidth;
+window.addEventListener("resize",()=>{if(innerWidth===lastW)return;lastW=innerWidth;if(view==="detail")openDetail(detailId);else if(view==="history")renderList();else if(view==="stats")renderStats()});
+})();
+</script>
