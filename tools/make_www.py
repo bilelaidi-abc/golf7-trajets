@@ -1,6 +1,6 @@
 # Génère www/index.html (app Android, sans OBD) à partir de la version web app.html
 import sys
-src = sys.argv[1] if len(sys.argv) > 1 else '/mnt/project-files/golf7-trajets/app.html'
+src = sys.argv[1] if len(sys.argv) > 1 else 'web/app.html'
 s = open(src).read()
 
 def cut(a, b, repl=''):
@@ -82,6 +82,66 @@ s = s.replace('function offer(name,text,type){\n', '''async function offer(name,
     catch(e){if(!/cancel/i.test(e.message||""))toast("Partage impossible : "+(e.message||e))}return}
 ''')
 s = s.replace('if(!("geolocation" in navigator))liveNote("Ce navigateur ne donne pas accès au GPS.");\n', '')
+# ---------- démarrage automatique au Bluetooth de la voiture ----------
+s = s.replace('''    <div class="panel">
+      <h3>Mes données</h3>''', '''    <div class="panel" id="autoPanel" hidden>
+      <div class="row between"><h3>Démarrage automatique</h3><span class="pill" id="autoPill"><span class="dot"></span>Désactivé</span></div>
+      <p class="muted" style="margin:0">Le trajet démarre seul quand le téléphone se connecte au Bluetooth de la voiture, et s'arrête une minute après la déconnexion. Pas besoin d'ouvrir l'app.</p>
+      <div class="note" id="autoNote" hidden></div>
+      <div class="row" id="autoActions"></div>
+      <div class="day" id="autoDevices"></div>
+    </div>
+    <div class="panel">
+      <h3>Mes données</h3>''', 1)
+s = s.replace('if(t.example){const e=document.createElement("span");e.className="tag ex";',
+              'if(t.auto){const e=document.createElement("span");e.className="tag";e.textContent="Auto";t2.appendChild(e)}\n    if(t.example){const e=document.createElement("span");e.className="tag ex";', 1)
+auto_js = r'''/* ---------- démarrage automatique (service Android) ---------- */
+const AUTO=NATIVE?Capacitor.registerPlugin("AutoTrip"):null;
+async function autoRefresh(){
+  if(!AUTO)return;let st;try{st=await AUTO.getStatus()}catch(e){return}
+  $("autoPanel").hidden=false;
+  const perms=st.bluetooth&&st.location&&st.background,on=!!st.carAddress&&perms;
+  setPill($("autoPill"),on?"on":"",on?"Activé":"Désactivé");
+  const note=$("autoNote"),act=$("autoActions");act.textContent="";
+  if(!perms){note.hidden=false;note.textContent="Autorisations nécessaires : Bluetooth, et position « Toujours autoriser ». Sans elles, Android empêche le trajet de démarrer seul."+(st.location&&!st.background?" Il ne manque plus que Position › Toujours autoriser.":"")}
+  else if(st.carAddress){note.hidden=false;note.textContent="Voiture : "+st.carName}
+  else{note.hidden=false;note.textContent="Autorisations accordées. Choisis maintenant le Bluetooth de ta Golf."}
+  const b=(t,cls,fn)=>{const x=document.createElement("button");x.textContent=t;if(cls)x.className=cls;x.onclick=fn;act.appendChild(x)};
+  if(!perms)b("Autoriser l'accès","primary",autoGrant);
+  else b(st.carAddress?"Changer de voiture":"Choisir le Bluetooth de la voiture",st.carAddress?"":"primary",autoPick);
+  if(st.carAddress)b("Désactiver","danger",async()=>{await AUTO.setCar({});$("autoDevices").textContent="";autoRefresh();toast("Démarrage automatique désactivé")});
+  if(!rec){
+    if(st.current){setPill($("gpsPill"),"rec","Trajet automatique");$("btnTrip").disabled=true;
+      liveNote("Trajet automatique en cours depuis "+hm(st.current.start)+" · "+fmt(st.current.distKm)+" km. Il apparaîtra dans l'historique une minute après la déconnexion du Bluetooth.")}
+    else if($("btnTrip").disabled){$("btnTrip").disabled=false;setPill($("gpsPill"),"","GPS inactif");liveNote("");importAuto()}
+  }
+}
+async function autoGrant(){
+  try{const r=await AUTO.requestNext();if(!r.asked)toast("Autorisations accordées");else if(r.asked==="background")toast("Choisis Autorisations › Position › Toujours autoriser, puis reviens")}
+  catch(e){toast(e.message||String(e))}
+}
+async function autoPick(){
+  const box=$("autoDevices");box.textContent="";
+  try{const {devices}=await AUTO.listPairedDevices();
+    if(!devices.length){const n=document.createElement("div");n.className="note";n.textContent="Aucun appareil Bluetooth appairé. Connecte d'abord le téléphone à la Golf, puis reviens ici.";box.appendChild(n);return}
+    const h=document.createElement("div");h.className="lbl";h.textContent="Choisis ta voiture";box.appendChild(h);
+    for(const d of devices){const x=document.createElement("button");x.className="trip";x.style.gridTemplateColumns="1fr";x.textContent=d.name;
+      x.onclick=async()=>{await AUTO.setCar({address:d.address,name:d.name});box.textContent="";toast("Voiture enregistrée : "+d.name);autoRefresh()};box.appendChild(x)}
+  }catch(e){const n=document.createElement("div");n.className="note";n.textContent=e.message||String(e);box.appendChild(n)}
+}
+async function importAuto(){
+  if(!AUTO)return;
+  try{const {trips:arr}=await AUTO.takePendingTrips();if(!arr||!arr.length)return;
+    trips=trips.filter(t=>!t.example);for(const t of arr)if(!trips.some(x=>x.id===t.id))trips.push(t);
+    trips.sort((a,b)=>b.start-a.start);persist();
+    toast(arr.length>1?arr.length+" trajets automatiques ajoutés":"1 trajet automatique ajouté");if(view==="history")renderList()}catch(e){}
+}
+if(AUTO){importAuto();autoRefresh();setInterval(autoRefresh,3000);
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){importAuto();autoRefresh()}})}
+
+/* ---------- démarrage ---------- */'''
+s = s.replace('/* ---------- démarrage ---------- */', auto_js, 1)
+
 for bad in ('btnObd', 'obdLive', 'obdPill', 'pollObd', 'navigator.bluetooth'):
     assert bad not in s, bad
 
