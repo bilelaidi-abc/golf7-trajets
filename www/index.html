@@ -91,10 +91,13 @@ canvas.chart{width:100%;height:140px;display:block}
 .legend{display:flex;gap:12px;font-size:12px;color:var(--muted);align-items:center}
 .legend i{display:inline-block;width:24px;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--route-a),var(--route-b))}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-nav.tabs .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-block:6px}
+nav.tabs .wrap{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding-block:6px}
 nav.tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:600;color:var(--muted);padding:6px 4px}
 nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
 nav.tabs button[aria-current="page"]{color:var(--accent)}
+.thumbs{display:flex;gap:8px;overflow-x:auto}.thumbs img{height:120px;border-radius:8px}
+details summary{cursor:pointer;color:var(--muted);font-size:13px}
+.switch{display:flex;align-items:center;gap:10px;font-weight:600}.switch input{width:auto}
 .empty{text-align:center;padding:24px 8px;color:var(--muted)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:20}
 textarea{min-height:70px;resize:vertical}
@@ -142,6 +145,34 @@ pre.out{font-family:var(--mono);font-size:12px;max-height:160px;overflow:auto;ba
 
   <!-- DETAIL -->
   <section id="v-detail" hidden><div class="wrap" id="detail"></div></section>
+
+  <!-- VOITURE -->
+  <section id="v-car" hidden><div class="wrap">
+    <h2>Ma voiture</h2>
+    <div class="panel">
+      <div id="carLast"></div>
+      <button class="big primary" id="btnPhoto">Photographier le compteur</button>
+      <p class="muted" style="margin:0;font-size:13px">Affiche sur le compteur la page voulue (Données de conduite « Long terme », Autonomie, Entretien), puis prends la photo bien en face, sans reflet. Tu peux enchaîner plusieurs photos pour un même relevé.</p>
+    </div>
+    <div class="panel" id="carDraft" hidden>
+      <h3>Nouveau relevé</h3>
+      <div class="note" id="draftStatus"></div>
+      <div class="thumbs" id="draftThumbs"></div>
+      <div class="grid2" id="draftFields"></div>
+      <details><summary>Texte lu sur la photo</summary><pre class="out" id="draftText"></pre></details>
+      <div class="row"><button class="primary" id="btnDraftSave">Enregistrer le relevé</button><button id="btnPhotoMore">Ajouter une photo</button><button id="btnDraftCancel">Annuler</button></div>
+    </div>
+    <div class="panel"><h3>Entretien</h3><div id="carMaint" style="display:flex;flex-direction:column;gap:12px"></div></div>
+    <div class="panel" id="remBox">
+      <h3>Rappel chaque semaine</h3>
+      <label class="switch"><input type="checkbox" id="remOn"> Me rappeler de photographier le tableau de bord</label>
+      <div class="grid2">
+        <label class="f">Jour<select id="remDay"><option value="2">Lundi</option><option value="3">Mardi</option><option value="4">Mercredi</option><option value="5">Jeudi</option><option value="6">Vendredi</option><option value="7">Samedi</option><option value="1">Dimanche</option></select></label>
+        <label class="f">Heure<select id="remHour"><option value="6">6 h</option><option value="7">7 h</option><option value="8">8 h</option><option value="9">9 h</option><option value="10">10 h</option><option value="11">11 h</option><option value="12">12 h</option><option value="13">13 h</option><option value="14">14 h</option><option value="15">15 h</option><option value="16">16 h</option><option value="17">17 h</option><option value="18">18 h</option><option value="19">19 h</option><option value="20">20 h</option><option value="21">21 h</option><option value="22">22 h</option></select></label>
+      </div>
+    </div>
+    <div class="panel"><h3>Relevés</h3><div id="carHist" class="day"></div></div>
+  </div></section>
 
   <!-- STATS -->
   <section id="v-stats" hidden><div class="wrap">
@@ -206,6 +237,7 @@ pre.out{font-family:var(--mono);font-size:12px;max-height:160px;overflow:auto;ba
 <nav class="tabs" aria-label="Navigation"><div class="wrap">
   <button data-v="live" aria-current="page"><svg viewBox="0 0 24 24"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>Trajet</button>
   <button data-v="history"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h9"/></svg>Historique</button>
+  <button data-v="car"><svg viewBox="0 0 24 24"><path d="M4 15l1.5-5A2 2 0 0 1 7.4 8.6h9.2a2 2 0 0 1 1.9 1.4L20 15"/><rect x="3" y="15" width="18" height="4" rx="1"/><circle cx="7.5" cy="19.5" r="1.5"/><circle cx="16.5" cy="19.5" r="1.5"/></svg>Voiture</button>
   <button data-v="stats"><svg viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>Stats</button>
   <button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Réglages</button>
 </div></nav>
@@ -259,6 +291,7 @@ function rawFuel(t){const m=modelOf(t),f=settings.fuel;return m.cruiseL*CRUISE_K
 let CAL=null; // ajustement d'après les relevés de l'ordinateur de bord
 function calib(){if(CAL!=null)return CAL;const r=[];
   for(const t of trips)if(t.consManual>0&&t.distKm>2&&hasModel(t)){const raw=rawFuel(t);if(raw>0)r.push(t.distKm*t.consManual/100/raw)}
+  r.push(...readingRatios());
   CAL=r.length?Math.min(1.6,Math.max(0.6,r.reduce((a,b)=>a+b,0)/r.length)):1;return CAL}
 function fuelOf(t){
   if(t.consManual)return t.distKm*t.consManual/100;
@@ -294,10 +327,10 @@ function persist(){CAL=null;return save(KEY,trips.filter(t=>!t.example).map(t=>{
 
 /* ---------- navigation ---------- */
 let view="live", detailId=null;
-function show(v){view=v;for(const s of["live","history","detail","stats","settings"])$("v-"+s).hidden=s!==v;
+function show(v){view=v;for(const s of["live","history","detail","car","stats","settings"])$("v-"+s).hidden=s!==v;
   document.querySelectorAll("nav.tabs button").forEach(b=>b.toggleAttribute("aria-current",b.dataset.v===v||(v==="detail"&&b.dataset.v==="history")));
   document.querySelectorAll("nav.tabs button[aria-current]").forEach(b=>b.setAttribute("aria-current","page"));
-  if(v==="history")renderList(); if(v==="stats")renderStats(); if(v==="settings")renderSettings(); window.scrollTo(0,0)}
+  if(v==="history")renderList(); if(v==="stats")renderStats(); if(v==="settings")renderSettings(); if(v==="car")renderCar(); window.scrollTo(0,0)}
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>show(b.dataset.v));
 
 /* ---------- dessin du parcours ---------- */
@@ -452,7 +485,7 @@ async function offer(name,text,type){
   const o=$("exportOut");o.hidden=false;o.textContent=text;
   if(navigator.clipboard)navigator.clipboard.writeText(text).then(()=>toast("Copié dans le presse-papiers"),()=>{});
 }
-$("btnExportJson").onclick=()=>offer("golf7-trajets.json",JSON.stringify({settings,trips:trips.filter(t=>!t.example)},null,1),"application/json");
+$("btnExportJson").onclick=()=>offer("golf7-trajets.json",JSON.stringify({settings,trips:trips.filter(t=>!t.example),readings:readings.map(({thumb,...r})=>r)},null,1),"application/json");
 $("btnExportCsv").onclick=()=>{const rows=[["date","debut","fin","nom","categorie","distance_km","duree_min","vitesse_moy","vitesse_max","conso_L100","carburant_L","cout","co2_kg","note"]];
   for(const t of trips.filter(t=>!t.example)){const d=new Date(t.start);rows.push([d.toLocaleDateString("fr-FR"),hm(t.start),hm(t.end),t.title||"",t.cat,fmt(t.distKm,2),Math.round(t.durMs/60000),fmt(t.durMs?t.distKm/(t.durMs/3600000):0,0),t.maxKmh||0,consOf(t).v==null?"":fmt(consOf(t).v),fmt(fuelOf(t),2),fmt(costOf(t),2),fmt(fuelOf(t)*CO2[settings.fuel],2),(t.note||"").replace(/\n/g," ")])}
   offer("golf7-trajets.csv",rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n"),"text/csv")};
@@ -609,6 +642,131 @@ async function nameTrips(){
   }}finally{naming=false}
 }
 nameTrips();
+
+/* ---------- ma voiture : relevés du tableau de bord par photo ----------
+   La photo est lue dans le téléphone (ML Kit, hors ligne). Les valeurs détectées sont toujours
+   proposées à vérifier avant d'être enregistrées. */
+const RKEY2="golf7.readings.v1";
+let readings=load(RKEY2,[]);
+const OCR=NATIVE?Capacitor.registerPlugin("DashOcr"):null;
+const CAM=NATIVE?Capacitor.registerPlugin("Camera"):null;
+const LN=NATIVE?Capacitor.registerPlugin("LocalNotifications"):null;
+const FIELDS=[["odo","Kilométrage","km"],["cons","Conso moyenne","L/100"],["range","Autonomie","km"],
+  ["oilKm","Vidange dans","km"],["oilDays","Vidange dans","jours"],["inspKm","Inspection dans","km"],["inspDays","Inspection dans","jours"]];
+let draft=null;
+function saveReadings(){CAL=null;readings.sort((a,b)=>b.date-a.date);readings.forEach((r,i)=>{if(i>=12)delete r.thumb});return save(RKEY2,readings)}
+const num=s=>parseFloat(String(s).replace(/[\s.](?=\d{3}\b)/g,"").replace(",","."));
+
+/** Extrait les valeurs utiles du texte lu sur le combiné d'instruments (français, anglais ou allemand). */
+function parseDash(lines){
+  const L=lines.map(l=>l.replace(/ /g," ").trim()).filter(Boolean),txt=L.join("\n"),out={};
+  const near=(re,i,span=2)=>{for(let k=i;k<=Math.min(L.length-1,i+span);k++){const m=L[k].match(re);if(m)return m}return null};
+  const KM=/(\d{1,3}(?:[ .]\d{3})+|\d{1,6})\s*km\b(?!\s*\/\s*h)/i, DAYS=/(\d{1,3})\s*(?:jours?|j\b|days?|tage?n?)/i;
+  const c=txt.match(/(\d{1,2}[.,]\d)\s*[l1iI|]\s*\/\s*100\s*km/i);if(c)out.cons=num(c[1]);
+  const kms=[...txt.matchAll(new RegExp(KM.source,"gi"))].map(m=>num(m[1])).filter(v=>v>=1000&&v<1e6);
+  L.forEach((l,i)=>{
+    if(/vidange|huile|oil|ölwechsel/i.test(l)){const k=near(KM,i),d=near(DAYS,i);if(k&&out.oilKm==null)out.oilKm=num(k[1]);if(d&&out.oilDays==null)out.oilDays=num(d[1])}
+    else if(/inspection|révision|revision|service|inspektion/i.test(l)){const k=near(KM,i),d=near(DAYS,i);if(k&&out.inspKm==null)out.inspKm=num(k[1]);if(d&&out.inspDays==null)out.inspDays=num(d[1])}
+    if(/autonomie|range|reichweite/i.test(l)){const k=near(KM,i,1);if(k&&out.range==null)out.range=num(k[1])}
+  });
+  const used=new Set([out.oilKm,out.inspKm,out.range]);
+  // compteur kilométrique : grand nombre (les distances « Long terme » restent sous 10 000 km), proche du dernier connu
+  const known=parseFloat(settings.odo)||0;
+  const odo=kms.filter(v=>!used.has(v)&&v>=10000&&(!known||Math.abs(v-known)<30000)).sort((a,b)=>b-a)[0];if(odo)out.odo=odo;
+  return out;
+}
+async function thumbOf(webPath){
+  return new Promise(res=>{const im=new Image();im.onload=()=>{const k=Math.min(1,480/im.width),c=document.createElement("canvas");
+    c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+    try{res(c.toDataURL("image/jpeg",.6))}catch(e){res(null)}};im.onerror=()=>res(null);im.src=webPath});
+}
+async function takePhoto(){
+  if(!NATIVE){toast("La photo du tableau de bord fonctionne dans l'app Android.");return}
+  let photo;try{photo=await CAM.getPhoto({source:"CAMERA",resultType:"uri",quality:85,correctOrientation:true})}
+  catch(e){if(!/cancel/i.test(e.message||""))toast("Appareil photo indisponible : "+(e.message||e));return}
+  const box=$("carDraft");box.hidden=false;$("draftStatus").textContent="Lecture de la photo…";
+  let lines=[];try{lines=(await OCR.read({path:photo.path})).lines||[]}catch(e){$("draftStatus").textContent="Lecture impossible : "+(e.message||e)}
+  const found=parseDash(lines);
+  if(!draft)draft={date:Date.now(),values:{},text:"",thumbs:[]};
+  for(const [k] of FIELDS)if(draft.values[k]==null&&found[k]!=null)draft.values[k]=found[k];
+  draft.text+=(draft.text?"\n---\n":"")+lines.join("\n");
+  const th=await thumbOf(photo.webPath);if(th)draft.thumbs.push(th);
+  renderDraft(Object.keys(found).length);
+}
+function renderDraft(nFound){
+  const box=$("carDraft");if(!draft){box.hidden=true;return}box.hidden=false;
+  $("draftStatus").textContent=nFound?`${nFound} valeur${nFound>1?"s":""} trouvée${nFound>1?"s":""} sur cette photo. Vérifie et corrige si besoin.`
+    :"Aucune valeur reconnue sur cette photo. Tu peux les saisir à la main ou reprendre la photo plus nette, bien en face.";
+  $("draftThumbs").innerHTML=draft.thumbs.map(t=>`<img src="${t}" alt="Photo du tableau de bord">`).join("");
+  $("draftFields").innerHTML=FIELDS.map(([k,l,u])=>`<label class="f">${l} (${u})<input id="df_${k}" type="number" inputmode="decimal" step="any" value="${draft.values[k]??""}"></label>`).join("");
+  $("draftText").textContent=draft.text||"(aucun texte lu)";
+}
+function saveDraft(){
+  const v={};for(const [k] of FIELDS){const x=parseFloat($("df_"+k).value);if(!isNaN(x))v[k]=x}
+  if(!Object.keys(v).length){toast("Saisis au moins une valeur");return}
+  readings.push({id:"r"+draft.date,date:draft.date,...v,thumb:draft.thumbs[0]||null});
+  if(v.odo){settings.odo=String(Math.round(v.odo));save(SKEY,settings)}
+  draft=null;if(!saveReadings())toast("Attention : relevé non enregistré");else toast("Relevé enregistré");renderCar();
+}
+function kmSince(ts){return trips.filter(t=>!t.example&&t.start>=ts).reduce((s,t)=>s+t.distKm,0)}
+function lastWith(k){return readings.find(r=>r[k]!=null)}
+function dueRow(label,kKey,dKey){
+  const rk=lastWith(kKey),rd=lastWith(dKey);if(!rk&&!rd)return "";
+  const km=rk?Math.round(rk[kKey]-kmSince(rk.date)):null,days=rd?Math.round(rd[dKey]-(Date.now()-rd.date)/864e5):null;
+  const late=(km!=null&&km<=0)||(days!=null&&days<=0),soon=(km!=null&&km<1500)||(days!=null&&days<30);
+  const pill=late?'<span class="pill rec"><span class="dot"></span>À faire</span>':soon?'<span class="pill on" style="color:var(--warn)"><span class="dot"></span>Bientôt</span>':'<span class="pill"><span class="dot"></span>OK</span>';
+  const parts=[km!=null?(km>0?`dans ${fmt(km,0)} km`:`dépassé de ${fmt(-km,0)} km`):null,days!=null?(days>0?`${days} jours`:`dépassé de ${-days} jours`):null].filter(Boolean);
+  return `<div class="row between"><div><b>${label}</b><div class="muted" style="font-size:13px">${parts.join(" · ")}</div></div>${pill}</div>`;
+}
+/** Ratio « conso de l'ordinateur de bord / conso calculée » sur les trajets du mois précédant chaque relevé. */
+function readingRatios(){
+  const out=[];
+  for(const r of readings){if(!r.cons)continue;
+    const ts=trips.filter(t=>!t.example&&!t.consManual&&hasModel(t)&&t.start<r.date&&t.start>r.date-30*864e5);
+    const km=ts.reduce((s,t)=>s+t.distKm,0),raw=ts.reduce((s,t)=>s+rawFuel(t),0);
+    if(km>=50&&raw>0)out.push(r.cons*km/100/raw)}
+  return out;
+}
+function renderCar(){
+  const last=readings[0];
+  $("carLast").innerHTML=last?`<div class="lbl">Dernier relevé · ${esc(dayLabel(last.date))}</div>
+    <div class="kv">${FIELDS.slice(0,3).map(([k,l,u])=>`<div><span class="lbl">${l}</span><b>${last[k]!=null?fmt(last[k],k==="cons"?1:0)+" "+u:"–"}</b></div>`).join("")}
+    <div><span class="lbl">Depuis</span><b>${fmt(kmSince(last.date),0)} km</b></div></div>`
+    :`<p class="muted" style="margin:0">Aucun relevé pour l'instant. Prends en photo l'écran du compteur : l'app lit le kilométrage, la conso moyenne, l'autonomie et les échéances d'entretien.</p>`;
+  const rows=dueRow("Vidange","oilKm","oilDays")+dueRow("Inspection","inspKm","inspDays");
+  $("carMaint").innerHTML=rows||`<p class="muted" style="margin:0">Photographie la page Entretien du compteur (menu Véhicule › Entretien) pour suivre la vidange et l'inspection.</p>`;
+  $("carHist").innerHTML=readings.length?readings.map(r=>`<div class="trip" style="grid-template-columns:${r.thumb?"76px ":""}minmax(0,1fr) auto;cursor:default">
+    ${r.thumb?`<img src="${r.thumb}" alt="" style="width:76px;height:56px;object-fit:cover;border-radius:8px">`:""}
+    <div style="min-width:0"><div class="t1"><span>${esc(new Date(r.date).toLocaleDateString("fr-FR"))}</span></div>
+    <div class="t2">${FIELDS.filter(([k])=>r[k]!=null).map(([k,l,u])=>`<span>${l} ${fmt(r[k],k==="cons"?1:0)} ${u}</span>`).join("")}</div></div>
+    <button class="danger" data-del="${r.id}" aria-label="Supprimer ce relevé">✕</button></div>`).join("")
+    :`<div class="empty">Les relevés apparaîtront ici.</div>`;
+  $("carHist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{readings=readings.filter(r=>r.id!==b.dataset.del);saveReadings();renderCar()});
+  renderReminder();
+}
+$("btnPhoto").onclick=takePhoto;
+$("btnPhotoMore").onclick=takePhoto;
+$("btnDraftSave").onclick=saveDraft;
+$("btnDraftCancel").onclick=()=>{draft=null;renderDraft()};
+
+/* rappel hebdomadaire */
+const REM_ID=801;
+function renderReminder(){
+  const r=settings.reminder||{on:false,day:1,hour:18};
+  $("remOn").checked=!!r.on;$("remDay").value=r.day;$("remHour").value=r.hour;$("remBox").hidden=!NATIVE;
+}
+async function applyReminder(){
+  const r=settings.reminder={on:$("remOn").checked,day:+$("remDay").value,hour:+$("remHour").value};save(SKEY,settings);
+  if(!LN)return;
+  try{await LN.cancel({notifications:[{id:REM_ID}]});
+    if(!r.on){toast("Rappel désactivé");return}
+    const p=await LN.requestPermissions();if(p.display!=="granted"){$("remOn").checked=false;r.on=false;save(SKEY,settings);toast("Autorise les notifications pour recevoir le rappel");return}
+    await LN.schedule({notifications:[{id:REM_ID,title:"Relevé du tableau de bord",body:"Prends une photo du compteur : kilométrage, conso et entretien.",
+      schedule:{on:{weekday:r.day,hour:r.hour,minute:0},allowWhileIdle:true},smallIcon:"ic_trip"}]});
+    toast("Rappel programmé chaque semaine")}catch(e){toast("Rappel impossible : "+(e.message||e))}
+}
+for(const id of ["remOn","remDay","remHour"])$(id).onchange=applyReminder;
+if(LN)LN.addListener("localNotificationActionPerformed",e=>{if(e&&e.notification&&e.notification.id===REM_ID)show("car")});
 
 /* ---------- démarrage ---------- */
 show("live");

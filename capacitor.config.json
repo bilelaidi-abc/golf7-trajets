@@ -4,5 +4,11 @@
   "webDir": "www",
   "android": {
     "useLegacyBridge": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_trip",
+      "iconColor": "#1F56C9"
+    }
   }
 }

@@ -25,3 +25,6 @@ Copier `app-debug.apk` sur le téléphone, l'ouvrir et autoriser « Installer de
 - Aucun trajet minimum : un trajet voiture à l'arrêt est enregistré (consommation au ralenti).
 - Consommation calculée par trajet : croisière selon la vitesse, temps au ralenti et énergie des accélérations. Ajustée automatiquement si tu saisis la conso de l'ordinateur de bord sur quelques trajets.
 - Carte (OpenStreetMap / CARTO) en fond du tracé, villes de départ et d'arrivée (Photon).
+
+## Relevé du tableau de bord (v1.3)
+Onglet **Voiture** : photo du compteur, lecture du texte dans le téléphone (ML Kit, hors ligne), valeurs à vérifier puis enregistrées (kilométrage, conso moyenne, autonomie, vidange et inspection en km/jours). Décompte d'entretien avec les km des trajets, conso de l'ordinateur de bord utilisée pour ajuster le calcul, rappel hebdomadaire par notification.

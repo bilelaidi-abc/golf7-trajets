@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AutoTripPlugin.class);
+        registerPlugin(DashOcrPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
