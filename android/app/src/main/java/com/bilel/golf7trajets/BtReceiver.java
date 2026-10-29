@@ -1,13 +1,20 @@
 package com.bilel.golf7trajets;
 
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
-/** Démarre le trajet quand le téléphone se connecte au Bluetooth de la voiture, l'arrête à la déconnexion. */
+/**
+ * Démarre le trajet quand le téléphone se connecte au Bluetooth de la voiture, l'arrête à la déconnexion.
+ * Android réveille l'app pour ces événements même quand elle est fermée.
+ */
 public class BtReceiver extends BroadcastReceiver {
+    private static final String A2DP_STATE = "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED";
+    private static final String HEADSET_STATE = "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED";
+
     @Override
     public void onReceive(Context context, Intent intent) {
         String car = AutoTripStore.carAddress(context);
@@ -17,11 +24,27 @@ public class BtReceiver extends BroadcastReceiver {
                 : intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
         if (device == null || !car.equalsIgnoreCase(device.getAddress())) return;
 
-        String action = intent.getAction();
-        if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-            TripService.start(context);
-        } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-            TripService.stop(context);
+        String action = String.valueOf(intent.getAction());
+        boolean connected;
+        switch (action) {
+            case BluetoothDevice.ACTION_ACL_CONNECTED:
+                connected = true;
+                break;
+            case BluetoothDevice.ACTION_ACL_DISCONNECTED:
+                connected = false;
+                break;
+            case A2DP_STATE:
+            case HEADSET_STATE: {
+                int state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1);
+                if (state == BluetoothProfile.STATE_CONNECTED) connected = true;
+                else if (state == BluetoothProfile.STATE_DISCONNECTED) connected = false;
+                else return;
+                break;
+            }
+            default:
+                return;
         }
+        if (connected) TripService.start(context, true);
+        else TripService.stopSoon();
     }
 }

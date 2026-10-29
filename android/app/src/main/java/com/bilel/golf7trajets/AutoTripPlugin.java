@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.Settings;
 
 import androidx.core.content.ContextCompat;
@@ -40,6 +41,32 @@ public class AutoTripPlugin extends Plugin {
         return Build.VERSION.SDK_INT < 29 || granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
     }
 
+    /** Sans cette exemption, certains téléphones (Samsung, Xiaomi…) bloquent le réveil de l'app en arrière-plan. */
+    private boolean batteryExempt() {
+        PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        return pm == null || pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
+    }
+
+    @PluginMethod
+    public void startNow(PluginCall call) {
+        if (!granted(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            getActivity().requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 7202);
+            call.reject("Autorise la position, puis appuie à nouveau sur Démarrer.", "NO_LOCATION");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 33 && !granted(Manifest.permission.POST_NOTIFICATIONS)) {
+            getActivity().requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7203);
+        }
+        TripService.start(getContext(), false);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void stopNow(PluginCall call) {
+        TripService.stopNow();
+        call.resolve();
+    }
+
     @PluginMethod
     public void getStatus(PluginCall call) {
         JSObject r = new JSObject();
@@ -49,6 +76,7 @@ public class AutoTripPlugin extends Plugin {
         r.put("location", granted(Manifest.permission.ACCESS_FINE_LOCATION));
         r.put("background", backgroundGranted());
         r.put("notifications", Build.VERSION.SDK_INT < 33 || granted(Manifest.permission.POST_NOTIFICATIONS));
+        r.put("battery", batteryExempt());
         JSONObject cur = TripService.status();
         r.put("current", cur != null ? cur : JSONObject.NULL);
         call.resolve(r);
@@ -80,6 +108,16 @@ public class AutoTripPlugin extends Plugin {
             openAppSettings();
             JSObject r = new JSObject();
             r.put("asked", "background");
+            call.resolve(r);
+            return;
+        }
+        if (!batteryExempt()) {
+            @SuppressLint("BatteryLife")
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.fromParts("package", getContext().getPackageName(), null));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            JSObject r = new JSObject();
+            r.put("asked", "battery");
             call.resolve(r);
             return;
         }

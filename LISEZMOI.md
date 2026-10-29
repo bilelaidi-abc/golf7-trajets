@@ -3,7 +3,8 @@
 Enregistre chaque trajet de la Golf 7 avec le GPS du téléphone, **écran éteint compris** (service de localisation de premier plan avec notification « Trajet en cours »). Pas d'OBD dans cette version.
 
 ## Contenu
-- `www/index.html` : l'interface de l'app (générée par `python3 tools/make_www.py web/app.html`)
+- `www/index.html` : l'interface de l'app (à modifier directement)
+- `android/app/src/main/java/.../TripService.java` : enregistrement des trajets en arrière-plan (GPS, vibrations, calcul de conso)
 - `web/` : version web (navigateur) de départ
 - `android/` : projet Android (Capacitor 7)
 - `.github/workflows/android.yml` : construit l'APK automatiquement sur GitHub
@@ -18,3 +19,9 @@ Copier `app-debug.apk` sur le téléphone, l'ouvrir et autoriser « Installer de
 ## Conseils
 - Sur Samsung, Xiaomi, Huawei : désactiver l'optimisation de batterie pour l'app, sinon Android peut couper l'enregistrement après un long moment écran éteint.
 - Si l'app est fermée en plein trajet, le trajet est repris à la réouverture (sauvegarde toutes les 15 s).
+
+## Fonctionnement (v1.2)
+- Démarrage automatique à la connexion Bluetooth de la voiture, même app fermée ; arrêt 5 s après la déconnexion. Vibration au début et à la fin.
+- Aucun trajet minimum : un trajet voiture à l'arrêt est enregistré (consommation au ralenti).
+- Consommation calculée par trajet : croisière selon la vitesse, temps au ralenti et énergie des accélérations. Ajustée automatiquement si tu saisis la conso de l'ordinateur de bord sur quelques trajets.
+- Carte (OpenStreetMap / CARTO) en fond du tracé, villes de départ et d'arrivée (Photon).

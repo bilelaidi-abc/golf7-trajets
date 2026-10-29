@@ -17,6 +17,9 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
@@ -37,14 +40,17 @@ import java.util.Locale;
  */
 public class TripService extends Service implements LocationListener {
     private static final String ACTION_START = "start";
-    private static final String ACTION_STOP = "stop";
+    private static final String EXTRA_AUTO = "auto";
     private static final String CHANNEL = "auto_trip";
     private static final int NOTIF_ID = 7101;
     private static final int NOTIF_ERROR_ID = 7102;
-    /** Une coupure Bluetooth plus courte que ça (calage, Stop & Start) ne coupe pas le trajet. */
-    private static final long STOP_DELAY_MS = 60_000;
-    private static final float MIN_TRIP_KM = 0.3f;
+    /** Délai entre la coupure du Bluetooth (voiture arrêtée) et la fin du trajet. */
+    private static final long STOP_DELAY_MS = 5_000;
     private static final int MAX_POINTS = 800;
+    /** Masse de la Golf 7 avec conducteur, en kg (énergie dépensée à chaque accélération). */
+    private static final double MASS_KG = 1430;
+    /** Hausse de vitesse (m/s) à partir de laquelle on compte une accélération, pour ignorer le bruit GPS. */
+    private static final double RISE_MS = 3;
 
     static volatile TripService running;
 
@@ -52,13 +58,20 @@ public class TripService extends Service implements LocationListener {
     private final Runnable finishRunnable = this::finishTrip;
     private LocationManager locationManager;
     private final List<double[]> points = new ArrayList<>(); // lat, lon, temps, km/h
+    private boolean auto;
     private long startMs;
     private double distKm;
     private double maxKmh;
+    private double lastKmh;
     private Location last;
+    // Modèle de consommation : temps au ralenti, carburant de croisière (base essence), énergie des accélérations
+    private double movingS;
+    private double cruiseL;
+    private double accelJ;
+    private double ema = -1, riseLo, riseHi;
 
-    static void start(Context c) {
-        Intent i = new Intent(c, TripService.class).setAction(ACTION_START);
+    static void start(Context c, boolean auto) {
+        Intent i = new Intent(c, TripService.class).setAction(ACTION_START).putExtra(EXTRA_AUTO, auto);
         try {
             ContextCompat.startForegroundService(c, i);
         } catch (Exception e) {
@@ -66,9 +79,15 @@ public class TripService extends Service implements LocationListener {
         }
     }
 
-    static void stop(Context c) {
+    /** Fin de trajet différée : une reconnexion rapide du Bluetooth continue le même trajet. */
+    static void stopSoon() {
         TripService s = running;
         if (s != null) s.scheduleFinish();
+    }
+
+    static void stopNow() {
+        TripService s = running;
+        if (s != null) s.finishTrip();
     }
 
     /** Résumé du trajet en cours, ou null. */
@@ -79,6 +98,10 @@ public class TripService extends Service implements LocationListener {
         try {
             o.put("start", s.startMs);
             o.put("distKm", s.distKm);
+            o.put("kmh", Math.round(s.lastKmh));
+            o.put("maxKmh", Math.round(s.maxKmh));
+            o.put("auto", s.auto);
+            o.put("gps", s.last != null);
         } catch (JSONException ignored) {
         }
         return o;
@@ -95,33 +118,33 @@ public class TripService extends Service implements LocationListener {
             stopSelf();
             return START_NOT_STICKY;
         }
-        String action = intent != null ? intent.getAction() : null;
-        if (ACTION_STOP.equals(action)) {
-            finishTrip();
-        } else if (running == this) {
+        if (running == this) {
             handler.removeCallbacks(finishRunnable); // reconnexion rapide : on continue le même trajet
         } else {
-            beginTrip();
+            beginTrip(intent != null && intent.getBooleanExtra(EXTRA_AUTO, false));
         }
         return START_NOT_STICKY;
     }
 
-    private void beginTrip() {
+    private void beginTrip(boolean isAuto) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             notifyError(this);
             stopSelf();
             return;
         }
         running = this;
+        auto = isAuto;
         startMs = System.currentTimeMillis();
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         try {
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 5, this, Looper.getMainLooper());
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, this, Looper.getMainLooper());
         } catch (SecurityException | IllegalArgumentException e) {
             notifyError(this);
             running = null;
             stopSelf();
+            return;
         }
+        vibrate(this, new long[]{0, 600});
     }
 
     private void scheduleFinish() {
@@ -134,31 +157,66 @@ public class TripService extends Service implements LocationListener {
         if (loc.getAccuracy() > 60) return;
         double kmh = loc.hasSpeed() ? loc.getSpeed() * 3.6 : -1;
         if (last != null) {
-            float d = last.distanceTo(loc);
             double dt = (loc.getTime() - last.getTime()) / 1000.0;
-            if (kmh < 0 && dt > 0) kmh = d / dt * 3.6;
-            if (d < Math.max(4, loc.getAccuracy() * 0.5) && kmh < 5) return; // à l'arrêt : dérive GPS
-            if (dt > 0 && d / dt * 3.6 > 250) return; // saut aberrant
+            if (dt <= 0) return;
+            float d = last.distanceTo(loc);
+            if (kmh < 0) kmh = d / dt * 3.6;
+            if (d / dt * 3.6 > 250) return; // saut aberrant
+            trackSpeed(Math.max(0, kmh) / 3.6);
+            if (d < Math.max(4, loc.getAccuracy() * 0.5) && kmh < 5) { // à l'arrêt : on ignore la dérive GPS
+                lastKmh = Math.max(0, kmh);
+                return;
+            }
+            double v = d / dt;
+            if (v >= 1.4) { // en mouvement ; sinon le temps compte comme ralenti
+                movingS += dt;
+                cruiseL += d / 1000.0 * cruiseL100(v * 3.6) / 100.0;
+            }
             distKm += d / 1000.0;
         }
         kmh = Math.max(0, kmh);
+        lastKmh = kmh;
         maxKmh = Math.max(maxKmh, kmh);
         points.add(new double[]{loc.getLatitude(), loc.getLongitude(), loc.getTime(), Math.round(kmh)});
         last = loc;
-        if (points.size() % 15 == 0) {
+        if (points.size() % 10 == 0) {
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.notify(NOTIF_ID, buildNotification());
         }
     }
 
+    /** Consommation de croisière d'une Golf 7 essence à vitesse stable (L/100 km). Même courbe que dans l'app. */
+    static double cruiseL100(double kmh) {
+        double s = Math.max(8, kmh);
+        return 2.2 + 70 / s + 0.00028 * s * s;
+    }
+
+    /** Compte l'énergie de chaque accélération réelle (montée de vitesse de plus de 3 m/s, lissée). */
+    private void trackSpeed(double ms) {
+        ema = ema < 0 ? ms : ema * 0.6 + ms * 0.4;
+        if (ema > riseHi) riseHi = ema;
+        if (riseHi - ema > RISE_MS) {
+            closeRise();
+            riseLo = riseHi = ema;
+        } else if (ema < riseLo) {
+            riseLo = riseHi = ema;
+        }
+    }
+
+    private void closeRise() {
+        if (riseHi - riseLo > RISE_MS) accelJ += 0.5 * MASS_KG * (riseHi * riseHi - riseLo * riseLo);
+    }
+
     private void finishTrip() {
         handler.removeCallbacks(finishRunnable);
         if (locationManager != null) locationManager.removeUpdates(this);
-        if (running == this && distKm >= MIN_TRIP_KM && !points.isEmpty()) {
+        if (running == this) {
+            closeRise();
             try {
                 AutoTripStore.addPending(this, toJson());
             } catch (JSONException ignored) {
             }
+            vibrate(this, new long[]{0, 250, 200, 250});
         }
         running = null;
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
@@ -166,7 +224,7 @@ public class TripService extends Service implements LocationListener {
     }
 
     private JSONObject toJson() throws JSONException {
-        long end = (long) points.get(points.size() - 1)[2];
+        long end = System.currentTimeMillis();
         JSONArray pts = new JSONArray();
         int step = Math.max(1, (int) Math.ceil(points.size() / (double) MAX_POINTS));
         for (int i = 0; i < points.size(); i++) {
@@ -174,15 +232,20 @@ public class TripService extends Service implements LocationListener {
             double[] p = points.get(i);
             pts.put(new JSONArray().put(Math.round(p[0] * 1e6) / 1e6).put(Math.round(p[1] * 1e6) / 1e6).put((long) p[2]).put((long) p[3]));
         }
+        JSONObject model = new JSONObject();
+        model.put("idleS", Math.round(Math.max(0, (end - startMs) / 1000.0 - movingS)));
+        model.put("cruiseL", Math.round(cruiseL * 10000) / 10000.0);
+        model.put("accelKJ", Math.round(accelJ / 1000));
         JSONObject t = new JSONObject();
-        t.put("id", "a" + startMs);
-        t.put("auto", true);
+        t.put("id", (auto ? "a" : "t") + startMs);
+        t.put("auto", auto);
         t.put("start", startMs);
         t.put("end", end);
         t.put("durMs", end - startMs);
         t.put("distKm", Math.round(distKm * 1000) / 1000.0);
         t.put("maxKmh", Math.round(maxKmh));
         t.put("pts", pts);
+        t.put("model", model);
         t.put("cat", "perso");
         t.put("title", "");
         t.put("note", "");
@@ -192,14 +255,27 @@ public class TripService extends Service implements LocationListener {
         return t;
     }
 
+    static void vibrate(Context c, long[] pattern) {
+        Vibrator v;
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager vm = c.getSystemService(VibratorManager.class);
+            v = vm != null ? vm.getDefaultVibrator() : null;
+        } else {
+            v = (Vibrator) c.getSystemService(VIBRATOR_SERVICE);
+        }
+        if (v == null || !v.hasVibrator()) return;
+        if (Build.VERSION.SDK_INT >= 26) v.vibrate(VibrationEffect.createWaveform(pattern, -1));
+        else v.vibrate(pattern, -1);
+    }
+
     private Notification buildNotification() {
         ensureChannel(this);
-        String text = running == this
-                ? String.format(Locale.FRANCE, "%.1f km enregistrés", distKm)
-                : "Démarrage du GPS…";
+        String text = running != this ? "Démarrage du GPS…"
+                : last == null ? "Recherche du signal GPS…"
+                : String.format(Locale.FRANCE, "%.1f km · %d km/h", distKm, Math.round(lastKmh));
         return new NotificationCompat.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_trip)
-                .setContentTitle("Golf 7 · trajet en cours")
+                .setContentTitle(auto ? "Golf 7 · trajet automatique" : "Golf 7 · trajet en cours")
                 .setContentText(text)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
@@ -216,7 +292,7 @@ public class TripService extends Service implements LocationListener {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
-            nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Trajets automatiques", NotificationManager.IMPORTANCE_LOW));
+            nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Trajets", NotificationManager.IMPORTANCE_LOW));
         }
     }
 
@@ -228,8 +304,8 @@ public class TripService extends Service implements LocationListener {
         try {
             nm.notify(NOTIF_ERROR_ID, new NotificationCompat.Builder(c, CHANNEL)
                     .setSmallIcon(R.drawable.ic_trip)
-                    .setContentTitle("Trajet automatique non démarré")
-                    .setContentText("Autorise la position « Toujours » pour Golf 7 Trajets.")
+                    .setContentTitle("Trajet non démarré")
+                    .setContentText("Ouvre l'app : il manque une autorisation (position « Toujours »).")
                     .setAutoCancel(true)
                     .setContentIntent(openApp(c))
                     .build());

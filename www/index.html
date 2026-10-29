@@ -3,6 +3,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>:root{padding-top:env(safe-area-inset-top,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <script src="capacitor.js"></script>
+<link rel="stylesheet" href="lib/leaflet/leaflet.css">
+<script src="lib/leaflet/leaflet.js"></script>
 </head><body>
 <title>Golf 7 Trajets</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -80,6 +82,8 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mu
 .tag.pro{background:var(--accent-soft);color:var(--accent)}
 .tag.ex{border:1px dashed var(--muted);background:transparent}
 canvas.map{width:100%;height:240px;background:var(--surface-2);border-radius:10px;display:block}
+div.map{width:100%;height:300px;border-radius:10px;overflow:hidden;background:var(--surface-2);z-index:0}
+.leaflet-container{font-family:var(--body)}
 canvas.chart{width:100%;height:140px;display:block}
 .kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
 .kv div{display:flex;flex-direction:column;gap:2px}
@@ -147,10 +151,12 @@ pre.out{font-family:var(--mono);font-size:12px;max-height:160px;overflow:auto;ba
       <div class="kv">
         <div><span class="lbl">Distance</span><b id="stKm">0 km</b></div>
         <div><span class="lbl">Temps de conduite</span><b id="stTime">0 h</b></div>
-        <div><span class="lbl">Carburant estimé</span><b id="stFuel">0 L</b></div>
-        <div><span class="lbl">Coût estimé</span><b id="stCost">0</b></div>
+        <div><span class="lbl">Carburant</span><b id="stFuel">0 L</b></div>
+        <div><span class="lbl">Coût</span><b id="stCost">0</b></div>
         <div><span class="lbl">CO₂ émis</span><b id="stCo2">0 kg</b></div>
         <div><span class="lbl">Part pro</span><b id="stPro">0 %</b></div>
+        <div><span class="lbl">Conso moyenne</span><b id="stCons">–</b></div>
+        <div><span class="lbl">Au ralenti</span><b id="stIdle">0 min</b></div>
       </div>
     </div>
     <div class="panel">
@@ -168,16 +174,16 @@ pre.out{font-family:var(--mono);font-size:12px;max-height:160px;overflow:auto;ba
         <label class="f">Nom affiché<input id="sName" maxlength="20"></label>
         <label class="f">Motorisation<select id="sFuel">
           <option value="essence">Essence (TSI)</option><option value="diesel">Diesel (TDI)</option></select></label>
-        <label class="f">Conso moyenne (L/100)<input id="sCons" type="number" step="0.1" min="2" max="20"></label>
+        <label class="f">Conso de secours (L/100)<input id="sCons" type="number" step="0.1" min="2" max="20"></label>
         <label class="f">Prix carburant / L<input id="sPrice" type="number" step="0.001" min="0"></label>
         <label class="f">Devise<input id="sCur" maxlength="4"></label>
         <label class="f">Kilométrage actuel<input id="sOdo" type="number" min="0" step="1"></label>
       </div>
-      <p class="muted" style="margin:0;font-size:13px">La conso moyenne sert à estimer le carburant de chaque trajet. Pour un trajet précis, saisis la conso affichée par l'ordinateur de bord (« Depuis départ ») dans le détail du trajet.</p>
+      <p class="muted" style="margin:0;font-size:13px">La consommation de chaque trajet est calculée à partir des vitesses, des accélérations et du temps au ralenti. Si tu saisis la conso de l'ordinateur de bord (« Depuis départ ») sur quelques trajets, l'app ajuste son calcul à ta voiture. La conso de secours ne sert que pour un trajet sans GPS.</p>
     </div>
     <div class="panel" id="autoPanel" hidden>
       <div class="row between"><h3>Démarrage automatique</h3><span class="pill" id="autoPill"><span class="dot"></span>Désactivé</span></div>
-      <p class="muted" style="margin:0">Le trajet démarre seul quand le téléphone se connecte au Bluetooth de la voiture, et s'arrête une minute après la déconnexion. Pas besoin d'ouvrir l'app.</p>
+      <p class="muted" style="margin:0">Le trajet démarre seul quand le téléphone se connecte au Bluetooth de la voiture, même si l'app est fermée, et s'arrête 5 secondes après la déconnexion. Le téléphone vibre au début et à la fin.</p>
       <div class="note" id="autoNote" hidden></div>
       <div class="row" id="autoActions"></div>
       <div class="day" id="autoDevices"></div>
@@ -227,8 +233,43 @@ function dur(ms){const s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor(s
 function hav(a,b){const R=6371000,r=Math.PI/180,dLa=(b[0]-a[0])*r,dLo=(b[1]-a[1])*r;
   const x=Math.sin(dLa/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
 function toast(t){const el=document.createElement("div");el.className="toast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),2200)}
-function fuelOf(t){ if(t.consManual) return t.distKm*t.consManual/100; if(t.obdFuelL) return t.obdFuelL; return t.distKm*settings.cons/100 }
-function consOf(t){ if(t.consManual) return {v:t.consManual,src:"ordinateur de bord"}; if(t.obdFuelL&&t.distKm>0.5) return {v:t.obdFuelL/t.distKm*100,src:"OBD"}; return {v:settings.cons,src:"estimation"} }
+/* ---------- consommation calculée ----------
+   Sans OBD, on estime le carburant d'après le trajet : croisière selon la vitesse,
+   ralenti selon le temps arrêté moteur tournant, et énergie de chaque accélération. */
+const IDLE_LPH={essence:0.7,diesel:0.55};        // L/h moteur au ralenti
+const ENERGY={essence:32e6,diesel:36e6};          // J par litre
+const EFF={essence:0.24,diesel:0.30};             // rendement moteur en accélération
+const CRUISE_K={essence:1,diesel:0.8};            // la courbe de croisière est celle de l'essence
+const MASS_KG=1430;
+function cruiseL100(kmh){const s=Math.max(8,kmh);return 2.2+70/s+0.00028*s*s} // même courbe que TripService.java
+function modelOf(t){
+  if(t.model)return t.model;
+  if(t._m)return t._m;
+  const P=t.pts||[];let moving=0,cruiseL=0,accelJ=0,ema=-1,lo=0,hi=0;
+  const close=()=>{if(hi-lo>3)accelJ+=0.5*MASS_KG*(hi*hi-lo*lo)};
+  for(let i=1;i<P.length;i++){const dt=(P[i][2]-P[i-1][2])/1000;if(dt<=0)continue;const d=hav(P[i-1],P[i]),v=d/dt;
+    if(v>=1.4){moving+=dt;cruiseL+=d/1000*cruiseL100(v*3.6)/100}
+    const ms=(P[i][3]||0)/3.6;ema=ema<0?ms:ema*.6+ms*.4;if(ema>hi)hi=ema;
+    if(hi-ema>3){close();lo=hi=ema}else if(ema<lo){lo=hi=ema}}
+  close();
+  return t._m={idleS:Math.max(0,(t.durMs||0)/1000-moving),cruiseL,accelKJ:accelJ/1000};
+}
+function hasModel(t){return !!(t.model||(t.pts&&t.pts.length>1)||(t.durMs&&t.auto))}
+function rawFuel(t){const m=modelOf(t),f=settings.fuel;return m.cruiseL*CRUISE_K[f]+IDLE_LPH[f]*m.idleS/3600+m.accelKJ*1000/(EFF[f]*ENERGY[f])}
+let CAL=null; // ajustement d'après les relevés de l'ordinateur de bord
+function calib(){if(CAL!=null)return CAL;const r=[];
+  for(const t of trips)if(t.consManual>0&&t.distKm>2&&hasModel(t)){const raw=rawFuel(t);if(raw>0)r.push(t.distKm*t.consManual/100/raw)}
+  CAL=r.length?Math.min(1.6,Math.max(0.6,r.reduce((a,b)=>a+b,0)/r.length)):1;return CAL}
+function fuelOf(t){
+  if(t.consManual)return t.distKm*t.consManual/100;
+  if(t.obdFuelL)return t.obdFuelL;
+  if(hasModel(t))return rawFuel(t)*calib();
+  return t.distKm*settings.cons/100}
+function consOf(t){
+  if(t.consManual)return {v:t.consManual,src:"ordinateur de bord"};
+  if(t.distKm<0.3)return {v:null,src:"voiture à l'arrêt : "+fmt(fuelOf(t),2)+" L au ralenti"};
+  if(!hasModel(t))return {v:settings.cons,src:"conso de secours"};
+  return {v:fuelOf(t)/t.distKm*100,src:calib()!==1?"calculée, ajustée sur tes relevés":"calculée (vitesses, accélérations, ralenti)"}}
 function costOf(t){return fuelOf(t)*settings.price}
 
 /* ---------- exemples (marqués comme tels) ---------- */
@@ -249,7 +290,7 @@ function makeExamples(){
   }
   return out.sort((a,b)=>b.start-a.start);
 }
-function persist(){return save(KEY,trips.filter(t=>!t.example))}
+function persist(){CAL=null;return save(KEY,trips.filter(t=>!t.example).map(t=>{const {_m,...o}=t;return o}))}
 
 /* ---------- navigation ---------- */
 let view="live", detailId=null;
@@ -273,6 +314,24 @@ function drawRoute(c,pts,thick){
   for(let i=1;i<pts.length;i++){const a=P(pts[i-1]),b=P(pts[i]);x.strokeStyle=thick?mix(ca,cb,(pts[i][3]||0)/maxS):ca;x.beginPath();x.moveTo(...a);x.lineTo(...b);x.stroke()}
   const dot=(p,col)=>{const q=P(p);x.fillStyle=col;x.beginPath();x.arc(q[0],q[1],thick?6:3,0,7);x.fill();x.strokeStyle=css("--surface");x.lineWidth=2;x.stroke()};
   dot(pts[0],css("--good"));dot(pts[pts.length-1],css("--bad"));
+}
+let leafletMap=null;
+function drawMap(el,pts){
+  if(leafletMap){leafletMap.remove();leafletMap=null}
+  if(!window.L||!pts||pts.length<2){const c=document.createElement("canvas");c.className="map";el.replaceWith(c);requestAnimationFrame(()=>drawRoute(c,pts,true));return}
+  const dark=document.documentElement.dataset.theme==="dark"||(document.documentElement.dataset.theme!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);
+  const map=leafletMap=L.map(el,{scrollWheelZoom:false,attributionControl:true});
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/"+(dark?"dark_all":"rastertiles/voyager")+"/{z}/{x}/{y}{r}.png",
+    {subdomains:"abcd",maxZoom:19,attribution:"© OpenStreetMap © CARTO"}).addTo(map);
+  // tracé coloré par vitesse : on regroupe les points de même couleur pour limiter le nombre de lignes
+  const maxS=Math.max(30,...pts.map(p=>p[3]||0)),ca=css("--route-a"),cb=css("--route-b"),lvl=p=>Math.min(5,Math.floor((p[3]||0)/maxS*6));
+  let seg=[[pts[0][0],pts[0][1]]],cur=lvl(pts[0]);
+  const flush=()=>{if(seg.length>1)L.polyline(seg,{color:mix(ca,cb,cur/5),weight:5,opacity:.95,lineCap:"round"}).addTo(map)};
+  for(let i=1;i<pts.length;i++){const l=lvl(pts[i]),ll=[pts[i][0],pts[i][1]];seg.push(ll);if(l!==cur){flush();seg=[ll];cur=l}}
+  flush();
+  const dot=(p,col)=>L.circleMarker([p[0],p[1]],{radius:7,color:"#fff",weight:2,fillColor:col,fillOpacity:1}).addTo(map);
+  dot(pts[0],css("--good"));dot(pts[pts.length-1],css("--bad"));
+  map.fitBounds(L.latLngBounds(pts.map(p=>[p[0],p[1]])),{padding:[24,24],maxZoom:16});
 }
 function drawSpeed(c,pts){
   const [x,w,h]=setupCanvas(c);if(!pts||pts.length<2)return;const t0=pts[0][2],t1=pts[pts.length-1][2]||t0+1;
@@ -324,18 +383,19 @@ function openDetail(id){detailId=id;const t=trips.find(x=>x.id===id);if(!t)retur
   const osm=first?`https://www.openstreetmap.org/directions?route=${first[0]},${first[1]};${last[0]},${last[1]}`:"";
   d.innerHTML=`
   <div class="row between"><button id="dBack">← Historique</button>${t.example?'<span class="tag ex">Exemple</span>':""}</div>
-  <div><div class="lbl">${esc(dayLabel(t.start))} · ${hm(t.start)} – ${hm(t.end)}</div><h2>${esc(t.title||"Trajet")}</h2></div>
-  <div class="panel"><canvas class="map" id="dMap"></canvas>
+  <div><div class="lbl">${esc(dayLabel(t.start))} · ${hm(t.start)} – ${hm(t.end)}${t.auto?" · automatique":""}</div><h2>${esc(t.title||"Trajet")}</h2>${t.places&&t.places.from?`<div class="muted">De ${esc(t.places.from)} à ${esc(t.places.to||t.places.from)}</div>`:""}</div>
+  <div class="panel"><div class="map" id="dMap"></div>
     <div class="row between"><div class="legend"><i></i>lent → rapide</div>${osm?`<a href="${osm}" target="_blank" rel="noopener" class="muted" style="font-size:13px">Ouvrir dans OpenStreetMap ↗</a>`:""}</div></div>
   <div class="panel"><div class="kv">
     <div><span class="lbl">Distance</span><b>${fmt(t.distKm)} km</b></div>
     <div><span class="lbl">Durée</span><b>${dur(t.durMs)}</b></div>
     <div><span class="lbl">Vitesse moyenne</span><b>${fmt(avg,0)} km/h</b></div>
     <div><span class="lbl">Vitesse max</span><b>${fmt(t.maxKmh||0,0)} km/h</b></div>
-    <div><span class="lbl">Consommation</span><b>${fmt(c.v)} L/100</b><span class="muted" style="font-size:12px">${c.src}</span></div>
+    <div><span class="lbl">Consommation</span><b>${c.v==null?"–":fmt(c.v)+" L/100"}</b><span class="muted" style="font-size:12px">${c.src}</span></div>
     <div><span class="lbl">Carburant</span><b>${fmt(fuelOf(t))} L</b></div>
     <div><span class="lbl">Coût</span><b>${fmt(costOf(t),2)} ${esc(settings.cur)}</b></div>
     <div><span class="lbl">CO₂</span><b>${fmt(co2)} kg</b></div>
+    ${hasModel(t)?`<div><span class="lbl">Au ralenti</span><b>${dur(modelOf(t).idleS*1000)}</b></div>`:""}
     ${t.obd?`<div><span class="lbl">Régime moyen</span><b>${fmt(t.obd.rpmAvg,0)} tr/min</b></div><div><span class="lbl">Temp. moteur max</span><b>${fmt(t.obd.tempMax,0)} °C</b></div>`:""}
   </div></div>
   <div class="panel"><h3>Profil de vitesse (km/h)</h3><canvas class="chart" id="dSpeed"></canvas></div>
@@ -349,7 +409,7 @@ function openDetail(id){detailId=id;const t=trips.find(x=>x.id===id);if(!t)retur
     <div class="row"><button class="primary" id="dSave">Enregistrer</button><span id="dDelBox"><button class="danger" id="dDel">Supprimer</button></span></div>
   </div>`;
   $("dCat").value=t.cat||"perso";
-  requestAnimationFrame(()=>{drawRoute($("dMap"),t.pts,true);drawSpeed($("dSpeed"),t.pts)});
+  requestAnimationFrame(()=>{drawMap($("dMap"),t.pts);drawSpeed($("dSpeed"),t.pts)});
   $("dBack").onclick=()=>show("history");
   $("dSave").onclick=()=>{t.title=$("dTitle").value.trim();t.cat=$("dCat").value;t.consManual=parseFloat($("dCons").value)||0;t.note=$("dNote").value;persist();toast("Trajet enregistré");openDetail(t.id)};
   $("dDel").onclick=()=>{const box=$("dDelBox");box.innerHTML='<span class="muted">Supprimer ce trajet ?</span> <button class="danger" id="dDelY">Oui, supprimer</button> <button id="dDelN">Annuler</button>';
@@ -365,6 +425,8 @@ function renderStats(){
   $("stKm").textContent=fmt(km)+" km";$("stTime").textContent=dur(mt.reduce((s,t)=>s+t.durMs,0));
   $("stFuel").textContent=fmt(fuel)+" L";$("stCost").textContent=fmt(fuel*settings.price,2)+" "+settings.cur;
   $("stCo2").textContent=fmt(fuel*CO2[settings.fuel])+" kg";
+  $("stCons").textContent=km>0.5?fmt(fuel/km*100)+" L/100":"–";
+  $("stIdle").textContent=dur(mt.filter(hasModel).reduce((s,t)=>s+modelOf(t).idleS*1000,0));
   const pro=mt.filter(t=>t.cat==="pro").reduce((s,t)=>s+t.distKm,0);$("stPro").textContent=(km?Math.round(pro/km*100):0)+" %";
   // 6 derniers mois
   const months=[];for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const e=new Date(d.getFullYear(),d.getMonth()+1,1);
@@ -392,7 +454,7 @@ async function offer(name,text,type){
 }
 $("btnExportJson").onclick=()=>offer("golf7-trajets.json",JSON.stringify({settings,trips:trips.filter(t=>!t.example)},null,1),"application/json");
 $("btnExportCsv").onclick=()=>{const rows=[["date","debut","fin","nom","categorie","distance_km","duree_min","vitesse_moy","vitesse_max","conso_L100","carburant_L","cout","co2_kg","note"]];
-  for(const t of trips.filter(t=>!t.example)){const d=new Date(t.start);rows.push([d.toLocaleDateString("fr-FR"),hm(t.start),hm(t.end),t.title||"",t.cat,fmt(t.distKm,2),Math.round(t.durMs/60000),fmt(t.durMs?t.distKm/(t.durMs/3600000):0,0),t.maxKmh||0,fmt(consOf(t).v),fmt(fuelOf(t),2),fmt(costOf(t),2),fmt(fuelOf(t)*CO2[settings.fuel],2),(t.note||"").replace(/\n/g," ")])}
+  for(const t of trips.filter(t=>!t.example)){const d=new Date(t.start);rows.push([d.toLocaleDateString("fr-FR"),hm(t.start),hm(t.end),t.title||"",t.cat,fmt(t.distKm,2),Math.round(t.durMs/60000),fmt(t.durMs?t.distKm/(t.durMs/3600000):0,0),t.maxKmh||0,consOf(t).v==null?"":fmt(consOf(t).v),fmt(fuelOf(t),2),fmt(costOf(t),2),fmt(fuelOf(t)*CO2[settings.fuel],2),(t.note||"").replace(/\n/g," ")])}
   offer("golf7-trajets.csv",rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\n"),"text/csv")};
 $("fileImport").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);
   const add=(j.trips||[]).filter(t=>t&&t.id&&!trips.some(x=>x.id===t.id));trips=trips.filter(t=>!t.example).concat(add).sort((a,b)=>b.start-a.start);
@@ -402,89 +464,75 @@ function bindWipe(){$("btnWipe").onclick=()=>{$("wipeBox").innerHTML='<span clas
   $("wY").onclick=()=>{trips=[];persist();resetWipe();toast("Trajets supprimés")};$("wN").onclick=resetWipe}}
 bindWipe();
 
-/* ---------- enregistrement GPS ---------- */
-// Dans l'app Android, le GPS passe par un service de premier plan : il continue écran éteint.
+/* ---------- enregistrement ----------
+   Dans l'app Android, tout trajet (manuel ou automatique) est enregistré par le service natif TripService :
+   il continue écran éteint et app fermée. Dans un navigateur, on garde le GPS du navigateur. */
 const NATIVE=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());
-const BG=NATIVE?Capacitor.registerPlugin("BackgroundGeolocation"):null;
-const RKEY="golf7.rec.v1";
-let rec=null,watchId=null,timer=null,wakeLock=null,lastSave=0,resumedNote=false;
+const AUTO=NATIVE?Capacitor.registerPlugin("AutoTrip"):null;
 function setPill(el,cls,txt){el.className="pill"+(cls?" "+cls:"");el.innerHTML='<span class="dot"></span>';el.append(txt)}
 function liveNote(t){$("liveNote").hidden=!t;$("liveNote").textContent=t||""}
-async function startTrip(resumed){
-  if(!NATIVE&&!("geolocation" in navigator)){liveNote("Ce téléphone ne donne pas accès au GPS.");return}
-  rec=resumed||{id:"t"+Date.now(),start:Date.now(),pts:[],distKm:0,maxKmh:0,cat:"perso",title:"",note:"",consManual:0,obdFuelL:0,last:null};
-  resumedNote=!!resumed;
-  $("btnTrip").textContent="Terminer le trajet";$("btnTrip").classList.remove("primary");setPill($("gpsPill"),"rec","Enregistrement");
-  liveNote(resumed?"Trajet en cours repris après la fermeture de l'app.":NATIVE?"Recherche du signal GPS… Tu peux éteindre l'écran : l'enregistrement continue.":"Recherche du signal GPS… Garde l'écran allumé pendant le trajet.");
-  save(RKEY,rec);
-  if(NATIVE){
-    try{const LN=Capacitor.registerPlugin("LocalNotifications");const p=await LN.checkPermissions();if(p.display!=="granted")await LN.requestPermissions()}catch(e){}
-    try{
-      watchId=await BG.addWatcher({backgroundTitle:"Golf 7 · trajet en cours",backgroundMessage:"Enregistrement du trajet. Ouvre l'app pour le terminer.",requestPermissions:true,stale:false,distanceFilter:5},(loc,err)=>{
-        if(err){if(err.code==="NOT_AUTHORIZED"){stopTrip(true);liveNote("La localisation est refusée. Dans les réglages Android de l'app, autorise la position, puis relance le trajet.");BG.openSettings().catch(()=>{})}return}
-        if(loc)onPos({coords:{latitude:loc.latitude,longitude:loc.longitude,accuracy:loc.accuracy,speed:loc.speed},timestamp:loc.time||Date.now()})});
-    }catch(e){stopTrip(true);liveNote("Impossible de démarrer le GPS : "+(e.message||e));return}
+function showLive(cur){
+  const btn=$("btnTrip");
+  if(cur){
+    const ms=Date.now()-cur.start;
+    $("lvSpeed").textContent=Math.round(cur.kmh||0);$("lvDist").textContent=fmt(cur.distKm);$("lvDur").textContent=dur(ms);
+    $("lvAvg").textContent=Math.round(ms>0?cur.distKm/(ms/3600000):0);
+    btn.textContent="Terminer le trajet";btn.classList.remove("primary");
+    setPill($("gpsPill"),"rec",cur.auto?"Trajet automatique":"Enregistrement");
   }else{
-    try{wakeLock=await navigator.wakeLock?.request("screen")}catch(e){}
-    watchId=navigator.geolocation.watchPosition(onPos,err=>{
-      if(err.code===1)stopTrip(true);
-      liveNote(err.code===1?"L'accès à la position est refusé. Autorise la localisation dans les réglages, puis relance le trajet.":"Signal GPS indisponible pour l'instant ("+err.message+").")},
-      {enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+    for(const [id,v] of [["lvSpeed","0"],["lvDist","0,0"],["lvDur","0:00"],["lvAvg","0"]])$(id).textContent=v;
+    btn.textContent="Démarrer le trajet";btn.classList.add("primary");setPill($("gpsPill"),"","GPS inactif");
   }
-  timer=setInterval(updateLive,1000);
 }
-function onPos(p){if(!rec)return;const c=p.coords;if(c.accuracy>60)return;if(!resumedNote)liveNote("");
-  const pt=[+c.latitude.toFixed(6),+c.longitude.toFixed(6),p.timestamp,0];
-  let kmh=c.speed!=null&&c.speed>=0?c.speed*3.6:null;
-  if(rec.last){const d=hav(rec.last,pt),dt=(pt[2]-rec.last[2])/1000;if(kmh==null&&dt>0)kmh=d/dt*3.6;
-    if(d<Math.max(4,c.accuracy*.5)&&(kmh||0)<5){rec.lastKmh=kmh||0;return} // à l'arrêt : on ignore la dérive GPS
-    if(dt>0&&d/dt*3.6>250)return; // saut aberrant
-    rec.distKm+=d/1000}
-  pt[3]=Math.round(kmh||0);rec.maxKmh=Math.max(rec.maxKmh,pt[3]);rec.lastKmh=pt[3];rec.pts.push(pt);rec.last=pt;updateLive();
-  if(Date.now()-lastSave>15000){lastSave=Date.now();save(RKEY,rec)}} // sauvegarde régulière au cas où Android ferme l'app
-function updateLive(){if(!rec)return;const ms=Date.now()-rec.start;$("lvSpeed").textContent=Math.round(rec.lastKmh||0);
-  $("lvDist").textContent=fmt(rec.distKm);$("lvDur").textContent=dur(ms);$("lvAvg").textContent=Math.round(ms>0?rec.distKm/(ms/3600000):0)}
-function stopTrip(discard){
-  if(watchId!=null){if(NATIVE)BG.removeWatcher({id:watchId}).catch(()=>{});else navigator.geolocation.clearWatch(watchId)}
-  watchId=null;clearInterval(timer);try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null;
-  try{localStorage.removeItem(RKEY)}catch(e){}
-  $("btnTrip").textContent="Démarrer le trajet";$("btnTrip").classList.add("primary");setPill($("gpsPill"),"","GPS inactif");
-  const r=rec;rec=null;if(!r||discard)return;
-  r.end=Date.now();r.durMs=r.end-r.start;
-  delete r.last;delete r.lastKmh;
-  if(r.distKm<0.1){liveNote("Trajet trop court (moins de 100 m) : il n'a pas été enregistré.");return}
-  if(r.pts.length>800){const k=Math.ceil(r.pts.length/800);r.pts=r.pts.filter((p,i)=>i%k===0||i===r.pts.length-1)}
-  trips=trips.filter(t=>!t.example);trips.unshift(r);
-  if(settings.odo)settings.odo=String(Math.round(parseFloat(settings.odo)+r.distKm)),save(SKEY,settings);
+function addTrips(arr){
+  trips=trips.filter(t=>!t.example);
+  for(const t of arr)if(!trips.some(x=>x.id===t.id)){trips.push(t);if(settings.odo)settings.odo=String(Math.round(parseFloat(settings.odo)+t.distKm))}
+  trips.sort((a,b)=>b.start-a.start);save(SKEY,settings);
   if(!persist())toast("Attention : impossible d'enregistrer le trajet");
-  openDetail(r.id);toast("Trajet enregistré");
+  nameTrips();
 }
-$("btnTrip").onclick=()=>rec?stopTrip(false):startTrip();
-{const pending=load(RKEY,null);if(pending&&pending.id)startTrip(pending)} // reprise d'un trajet interrompu
 
-/* ---------- démarrage automatique (service Android) ---------- */
-const AUTO=NATIVE?Capacitor.registerPlugin("AutoTrip"):null;
-async function autoRefresh(){
-  if(!AUTO)return;let st;try{st=await AUTO.getStatus()}catch(e){return}
+/* --- Android : service natif --- */
+let wasRunning=false,autoSig="";
+async function nativeTick(){
+  let st;try{st=await AUTO.getStatus()}catch(e){return}
+  const cur=st.current;
+  if(cur){
+    showLive(cur);
+    liveNote(!cur.gps?"Recherche du signal GPS… Tu peux éteindre l'écran : l'enregistrement continue."
+      :cur.auto?"Démarré automatiquement par le Bluetooth de la voiture. Il s'arrêtera 5 secondes après la déconnexion.":"Tu peux éteindre l'écran : l'enregistrement continue.");
+  }else if(wasRunning){showLive(null);liveNote("");const n=await importAuto();if(n&&view==="live")openDetail(trips[0].id)}
+  wasRunning=!!cur;
+  renderAuto(st);
+}
+async function importAuto(){
+  try{const {trips:arr}=await AUTO.takePendingTrips();if(!arr||!arr.length)return 0;
+    addTrips(arr);toast(arr.length>1?arr.length+" trajets ajoutés":"Trajet enregistré");
+    if(view==="history")renderList();return arr.length}catch(e){return 0}
+}
+function renderAuto(st){
   $("autoPanel").hidden=false;
+  const sig=JSON.stringify([st.carAddress,st.bluetooth,st.location,st.background,st.battery]);
+  if(sig===autoSig)return; autoSig=sig; // ne reconstruit les boutons que si quelque chose a changé
   const perms=st.bluetooth&&st.location&&st.background,on=!!st.carAddress&&perms;
   setPill($("autoPill"),on?"on":"",on?"Activé":"Désactivé");
-  const note=$("autoNote"),act=$("autoActions");act.textContent="";
-  if(!perms){note.hidden=false;note.textContent="Autorisations nécessaires : Bluetooth, et position « Toujours autoriser ». Sans elles, Android empêche le trajet de démarrer seul."+(st.location&&!st.background?" Il ne manque plus que Position › Toujours autoriser.":"")}
-  else if(st.carAddress){note.hidden=false;note.textContent="Voiture : "+st.carName}
-  else{note.hidden=false;note.textContent="Autorisations accordées. Choisis maintenant le Bluetooth de ta Golf."}
+  const note=$("autoNote"),act=$("autoActions");act.textContent="";note.hidden=false;
+  const ok=v=>v?"✓":"✗";
+  const checks=`${ok(st.bluetooth)} Bluetooth · ${ok(st.location&&st.background)} Position « Toujours » · ${ok(st.battery)} Batterie sans restriction`;
+  if(!perms)note.textContent=checks+". Sans le Bluetooth et la position « Toujours », Android empêche le trajet de démarrer seul.";
+  else if(!st.carAddress)note.textContent=checks+". Choisis maintenant le Bluetooth de ta Golf.";
+  else note.textContent="Voiture : "+st.carName+". "+checks+(st.battery?"":". Retire la restriction de batterie pour que le démarrage reste fiable.");
   const b=(t,cls,fn)=>{const x=document.createElement("button");x.textContent=t;if(cls)x.className=cls;x.onclick=fn;act.appendChild(x)};
-  if(!perms)b("Autoriser l'accès","primary",autoGrant);
-  else b(st.carAddress?"Changer de voiture":"Choisir le Bluetooth de la voiture",st.carAddress?"":"primary",autoPick);
-  if(st.carAddress)b("Désactiver","danger",async()=>{await AUTO.setCar({});$("autoDevices").textContent="";autoRefresh();toast("Démarrage automatique désactivé")});
-  if(!rec){
-    if(st.current){setPill($("gpsPill"),"rec","Trajet automatique");$("btnTrip").disabled=true;
-      liveNote("Trajet automatique en cours depuis "+hm(st.current.start)+" · "+fmt(st.current.distKm)+" km. Il apparaîtra dans l'historique une minute après la déconnexion du Bluetooth.")}
-    else if($("btnTrip").disabled){$("btnTrip").disabled=false;setPill($("gpsPill"),"","GPS inactif");liveNote("");importAuto()}
-  }
+  if(!perms||!st.battery)b(perms?"Retirer la restriction de batterie":"Autoriser l'accès","primary",autoGrant);
+  if(perms)b(st.carAddress?"Changer de voiture":"Choisir le Bluetooth de la voiture",st.carAddress?"":"primary",autoPick);
+  if(st.carAddress)b("Désactiver","danger",async()=>{await AUTO.setCar({});$("autoDevices").textContent="";autoSig="";nativeTick();toast("Démarrage automatique désactivé")});
 }
 async function autoGrant(){
-  try{const r=await AUTO.requestNext();if(!r.asked)toast("Autorisations accordées");else if(r.asked==="background")toast("Choisis Autorisations › Position › Toujours autoriser, puis reviens")}
+  try{const r=await AUTO.requestNext();
+    if(!r.asked)toast("Tout est autorisé");
+    else if(r.asked==="background")toast("Choisis Autorisations › Position › Toujours autoriser, puis reviens");
+    else if(r.asked==="battery")toast("Accepte pour que l'app puisse démarrer seule");
+    else toast("Accepte, puis rappuie sur le bouton s'il reste une étape")}
   catch(e){toast(e.message||String(e))}
 }
 async function autoPick(){
@@ -493,18 +541,74 @@ async function autoPick(){
     if(!devices.length){const n=document.createElement("div");n.className="note";n.textContent="Aucun appareil Bluetooth appairé. Connecte d'abord le téléphone à la Golf, puis reviens ici.";box.appendChild(n);return}
     const h=document.createElement("div");h.className="lbl";h.textContent="Choisis ta voiture";box.appendChild(h);
     for(const d of devices){const x=document.createElement("button");x.className="trip";x.style.gridTemplateColumns="1fr";x.textContent=d.name;
-      x.onclick=async()=>{await AUTO.setCar({address:d.address,name:d.name});box.textContent="";toast("Voiture enregistrée : "+d.name);autoRefresh()};box.appendChild(x)}
+      x.onclick=async()=>{await AUTO.setCar({address:d.address,name:d.name});box.textContent="";autoSig="";toast("Voiture enregistrée : "+d.name);nativeTick()};box.appendChild(x)}
   }catch(e){const n=document.createElement("div");n.className="note";n.textContent=e.message||String(e);box.appendChild(n)}
 }
-async function importAuto(){
-  if(!AUTO)return;
-  try{const {trips:arr}=await AUTO.takePendingTrips();if(!arr||!arr.length)return;
-    trips=trips.filter(t=>!t.example);for(const t of arr)if(!trips.some(x=>x.id===t.id))trips.push(t);
-    trips.sort((a,b)=>b.start-a.start);persist();
-    toast(arr.length>1?arr.length+" trajets automatiques ajoutés":"1 trajet automatique ajouté");if(view==="history")renderList()}catch(e){}
+
+/* --- navigateur : GPS du navigateur, écran allumé --- */
+let rec=null,watchId=null,timer=null,wakeLock=null;
+async function webStart(){
+  if(!("geolocation" in navigator)){liveNote("Ce navigateur ne donne pas accès au GPS.");return}
+  rec={id:"t"+Date.now(),start:Date.now(),pts:[],distKm:0,maxKmh:0,kmh:0,cat:"perso",title:"",note:"",consManual:0,obdFuelL:0,last:null};
+  try{navigator.vibrate&&navigator.vibrate(600)}catch(e){}
+  showLive(rec);liveNote("Recherche du signal GPS… Garde l'écran allumé pendant le trajet.");
+  try{wakeLock=await navigator.wakeLock?.request("screen")}catch(e){}
+  watchId=navigator.geolocation.watchPosition(onPos,err=>{
+    if(err.code===1){webStop(true);liveNote("L'accès à la position est refusé. Autorise la localisation dans les réglages, puis relance le trajet.")}
+    else liveNote("Signal GPS indisponible pour l'instant ("+err.message+").")},{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+  timer=setInterval(()=>rec&&showLive(rec),1000);
 }
-if(AUTO){importAuto();autoRefresh();setInterval(autoRefresh,3000);
-  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){importAuto();autoRefresh()}})}
+function onPos(p){if(!rec)return;const c=p.coords;if(c.accuracy>60)return;liveNote("");
+  const pt=[+c.latitude.toFixed(6),+c.longitude.toFixed(6),p.timestamp,0];
+  let kmh=c.speed!=null&&c.speed>=0?c.speed*3.6:null;
+  if(rec.last){const d=hav(rec.last,pt),dt=(pt[2]-rec.last[2])/1000;if(kmh==null&&dt>0)kmh=d/dt*3.6;
+    if(d<Math.max(4,c.accuracy*.5)&&(kmh||0)<5){rec.kmh=kmh||0;return} // à l'arrêt : on ignore la dérive GPS
+    if(dt>0&&d/dt*3.6>250)return; // saut aberrant
+    rec.distKm+=d/1000}
+  pt[3]=Math.round(kmh||0);rec.maxKmh=Math.max(rec.maxKmh,pt[3]);rec.kmh=pt[3];rec.pts.push(pt);rec.last=pt;showLive(rec)}
+function webStop(discard){
+  if(watchId!=null)navigator.geolocation.clearWatch(watchId);watchId=null;clearInterval(timer);try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null;
+  const r=rec;rec=null;showLive(null);if(!r||discard)return;
+  try{navigator.vibrate&&navigator.vibrate([250,200,250])}catch(e){}
+  r.end=Date.now();r.durMs=r.end-r.start;delete r.last;delete r.kmh;
+  if(r.pts.length>800){const k=Math.ceil(r.pts.length/800);r.pts=r.pts.filter((p,i)=>i%k===0||i===r.pts.length-1)}
+  addTrips([r]);openDetail(r.id);toast("Trajet enregistré");
+}
+
+$("btnTrip").onclick=async()=>{
+  if(!NATIVE)return rec?webStop(false):webStart();
+  const btn=$("btnTrip");btn.disabled=true;
+  try{if(wasRunning)await AUTO.stopNow();else{await AUTO.startNow();liveNote("Démarrage du GPS…")}}
+  catch(e){liveNote(e.message||String(e))}
+  setTimeout(()=>{btn.disabled=false;nativeTick()},600);
+};
+if(NATIVE){importAuto();nativeTick();setInterval(nativeTick,1500);
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){importAuto();nativeTick()}})}
+
+/* ---------- noms des lieux (départ / arrivée) ----------
+   Recherche inversée sur Photon (données OpenStreetMap), une requête par seconde au plus. */
+let naming=false;
+async function placeName(p){
+  for(const lang of ["&lang=fr",""]){
+    try{const r=await fetch(`https://photon.komoot.io/reverse?lat=${p[0]}&lon=${p[1]}&limit=1${lang}`);if(!r.ok)continue;
+      const pr=((await r.json()).features||[])[0]?.properties||{};
+      return pr.city||pr.town||pr.village||pr.district||pr.locality||pr.county||pr.name||""}catch(e){return null}}
+  return null;
+}
+async function nameTrips(){
+  if(naming)return;naming=true;
+  try{for(const t of trips){
+    if(t.example||t.places||!t.pts||!t.pts.length)continue;
+    const from=await placeName(t.pts[0]);if(from==null)break; // hors ligne : on réessaiera plus tard
+    await new Promise(r=>setTimeout(r,1100));
+    const to=await placeName(t.pts[t.pts.length-1]);if(to==null)break;
+    t.places={from,to};
+    if(!t.title&&from)t.title=from===to||!to?from:from+" → "+to;
+    persist();if(view==="history")renderList();
+    await new Promise(r=>setTimeout(r,1100));
+  }}finally{naming=false}
+}
+nameTrips();
 
 /* ---------- démarrage ---------- */
 show("live");
